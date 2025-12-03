@@ -12,10 +12,15 @@ export default function ProfileScreen() {
   const [balance, setBalance] = useState(0);
 
   useEffect(() => {
-    const fetchProfileData = async () => {
-      if (auth.currentUser?.uid) {
-        const userRef = doc(db, "users", auth.currentUser.uid); // Ensure user.uid is not undefined
+  const fetchProfileData = async () => {
+    if (auth.currentUser?.uid) {
+      try {
+        const userRef = doc(db, "users", auth.currentUser.uid);
         const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) {
+          Alert.alert("Error", "User profile data not found.");
+          return;
+        }
         const userData = userSnap.data();
 
         setUserProfile(userData);
@@ -24,16 +29,24 @@ export default function ProfileScreen() {
 
         const miningRef = doc(db, "miningData", auth.currentUser.uid);
         const miningSnap = await getDoc(miningRef);
+        if (!miningSnap.exists()) {
+          Alert.alert("Error", "Mining data not found.");
+          return;
+        }
         const miningData = miningSnap.data();
-
         setBalance(miningData?.balance || 0);
-      } else {
-        Alert.alert("Error", "User is not logged in.");
+      } catch (error) {
+        Alert.alert("Error", "Failed to load profile data");
+        console.error(error);
       }
-    };
+    } else {
+      Alert.alert("Error", "User is not logged in.");
+    }
+  };
 
-    fetchProfileData();
-  }, []);
+  fetchProfileData();
+}, []);
+
 
   const handleEditProfile = () => {
     setIsEditing(true);
@@ -168,4 +181,3 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
-commit -m

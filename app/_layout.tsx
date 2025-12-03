@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 
 export const unstable_settings = {
-  anchor: '(tabs)',
+  anchor: '(tabs)', // Navigates to tabs once authenticated
 };
 
 export default function RootLayout() {

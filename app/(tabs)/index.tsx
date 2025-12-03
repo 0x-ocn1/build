@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Alert } from "react-native";
 import { useState, useEffect } from "react";
 import { MotiView } from "moti";
 import { MaterialIcons } from "@expo/vector-icons"; // Import iconic icons
@@ -13,42 +13,53 @@ export default function MiningDashboard() {
   const [referralBonus, setReferralBonus] = useState(0);
   const [mining, setMining] = useState(false);
   const [balance, setBalance] = useState(0);
-  
-useEffect(() => {
-  const fetchData = async () => {
-    if (auth.currentUser) {
-      const userRef = doc(db, "users", auth.currentUser.uid);
-      const userSnap = await getDoc(userRef);
-      const userProfileData = userSnap.data();
 
-      if (userProfileData) {
-        setUserProfile(userProfileData);
+  useEffect(() => {
+    const fetchData = async () => {
+      if (auth.currentUser) {
+        try {
+          const userRef = doc(db, "users", auth.currentUser.uid);
+          const userSnap = await getDoc(userRef);
+          const userProfileData = userSnap.data();
 
-        const miningRef = doc(db, "miningData", auth.currentUser.uid);
-        const miningSnap = await getDoc(miningRef);
-        const miningData = miningSnap.data();
+          if (!userProfileData) {
+            Alert.alert("Error", "No user profile data found.");
+            return;
+          }
 
-        if (miningData) {
+          setUserProfile(userProfileData);
+
+          const miningRef = doc(db, "miningData", auth.currentUser.uid);
+          const miningSnap = await getDoc(miningRef);
+          const miningData = miningSnap.data();
+
+          if (!miningData) {
+            Alert.alert("Error", "No mining data found.");
+            return;
+          }
+
           setMiningData(miningData);
           setBalance(miningData.balance);
 
-          // Calculate referral bonus if applicable
           if (userProfileData.referredBy) {
             const referrerRef = doc(db, "users", userProfileData.referredBy);
             const refSnap = await getDoc(referrerRef);
             if (refSnap.exists()) {
               const referrerData = refSnap.data();
-              setReferralBonus(referrerData.referrals.totalReferred * 0.1); // 10% bonus
+              setReferralBonus(referrerData.referrals.totalReferred * 0.1);
             }
           }
+
+        } catch (error) {
+          Alert.alert("Error", "Failed to fetch mining data.");
+          console.error(error);
         }
       }
-      setIsLoading(false);
-    }
-  };
+      setIsLoading(false); // Ensure this runs after all data has been fetched
+    };
 
-  fetchData();
-}, []);
+    fetchData();
+  }, []);
 
   const handleStartStopMining = async () => {
     if (auth.currentUser) {
@@ -65,7 +76,7 @@ useEffect(() => {
   const handleClaimRewards = async () => {
     if (auth.currentUser) {
       const reward = await claimMiningRewards(auth.currentUser.uid);
-      setBalance(balance + reward);  // Update balance with claimed rewards
+      setBalance(balance + reward); // Update balance with claimed rewards
     }
   };
 
@@ -80,9 +91,7 @@ useEffect(() => {
   return (
     <View style={styles.container}>
       {/* HEADER */}
-      <Text style={styles.headerText}>
-        ⛏️ Mining Dashboard
-      </Text>
+      <Text style={styles.headerText}>⛏️ Mining Dashboard</Text>
 
       {/* BALANCE CARD */}
       <MotiView
@@ -115,7 +124,7 @@ useEffect(() => {
       {/* STATUS */}
       <View style={styles.statusContainer}>
         <Text style={styles.statusText}>
-          Status: 
+          Status:{" "}
           <Text style={[styles.statusLabel, { color: mining ? "green" : "red" }]}>
             {mining ? "Mining Active" : "Stopped"}
           </Text>
@@ -186,7 +195,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     color: "#333",
   },
-  balanceCard: {
+   balanceCard: {
     backgroundColor: "#f3f3f3",
     paddingVertical: 20,
     borderRadius: 20,
@@ -254,7 +263,7 @@ const styles = StyleSheet.create({
     backgroundColor: "green",
     marginTop: 10,
   },
-    actionButton: {
+  actionButton: {
     paddingVertical: 15,
     paddingHorizontal: 30,
     borderRadius: 30,
@@ -304,4 +313,3 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
 });
-

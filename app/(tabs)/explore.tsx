@@ -1,123 +1,170 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from "react";
+import { View, Text, TextInput, TouchableOpacity, Image, Alert, StyleSheet } from "react-native";
+import { auth, db } from "../../firebase/firebaseConfig"; // Firebase imports
+import { doc, getDoc, updateDoc } from "firebase/firestore"; // Firestore imports
+import { MaterialIcons } from "@expo/vector-icons"; // Material Icons
 
-import { Collapsible } from '@/components/ui/collapsible';
-import { ExternalLink } from '@/components/external-link';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Fonts } from '@/constants/theme';
+export default function ProfileScreen() {
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [username, setUsername] = useState("");
+  const [avatar, setAvatar] = useState<string | null>(null);
+  const [balance, setBalance] = useState(0);
 
-export default function TabTwoScreen() {
+  useEffect(() => {
+    const fetchProfileData = async () => {
+      if (auth.currentUser?.uid) {
+        const userRef = doc(db, "users", auth.currentUser.uid); // Ensure user.uid is not undefined
+        const userSnap = await getDoc(userRef);
+        const userData = userSnap.data();
+
+        setUserProfile(userData);
+        setUsername(userData?.username || "");
+        setAvatar(userData?.avatarUrl || null);
+
+        const miningRef = doc(db, "miningData", auth.currentUser.uid);
+        const miningSnap = await getDoc(miningRef);
+        const miningData = miningSnap.data();
+
+        setBalance(miningData?.balance || 0);
+      } else {
+        Alert.alert("Error", "User is not logged in.");
+      }
+    };
+
+    fetchProfileData();
+  }, []);
+
+  const handleEditProfile = () => {
+    setIsEditing(true);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!username.trim()) {
+      Alert.alert("Error", "Username is required");
+      return;
+    }
+
+    try {
+      const userRef = doc(db, "users", auth.currentUser?.uid!); // Non-null assertion since we've already checked for uid
+      await updateDoc(userRef, {
+        username: username.trim(),
+        avatarUrl: avatar || null,
+      });
+
+      Alert.alert("Success", "Profile updated successfully");
+      setIsEditing(false);
+    } catch (error) {
+      Alert.alert("Error", "Failed to update profile");
+    }
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText
-          type="title"
-          style={{
-            fontFamily: Fonts.rounded,
-          }}>
-          Explore
-        </ThemedText>
-      </ThemedView>
+    <View style={styles.container}>
+      {userProfile ? (
+        <>
+          <Text style={styles.headerText}>Profile</Text>
 
-      <ThemedText style={styles.mainText}>
-        Explore coming soon! You will be able to use VAD coin for different purposes in our VAD marketplace!
-      </ThemedText>
+          {/* Avatar */}
+          <TouchableOpacity onPress={() => {}} style={styles.avatarContainer}>
+            {avatar ? (
+              <Image source={{ uri: avatar }} style={styles.avatar} />
+            ) : (
+              <MaterialIcons name="person" size={60} color="#007bff" />
+            )}
+          </TouchableOpacity>
 
-      <Collapsible title="Marketplace Features">
-        <ThemedText>
-          In the future, the VAD marketplace will allow users to:
-        </ThemedText>
-        <ThemedText>- Buy and sell goods with VAD coins.</ThemedText>
-        <ThemedText>- Trade exclusive items and services.</ThemedText>
-        <ThemedText>- Access various marketplace features to enhance your experience.</ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
+          {/* Username */}
+          <Text style={styles.label}>Username</Text>
+          {isEditing ? (
+            <TextInput
+              value={username}
+              onChangeText={setUsername}
+              style={styles.input}
+            />
+          ) : (
+            <Text style={styles.text}>{username}</Text>
+          )}
 
-      <Collapsible title="Android, iOS, and Web Support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
+          {/* Balance */}
+          <Text style={styles.label}>Balance</Text>
+          <Text style={styles.text}>{balance.toFixed(2)} VAD</Text>
 
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image
-          source={require('@/assets/images/react-logo.png')}
-          style={{ width: 100, height: 100, alignSelf: 'center' }}
-        />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
+          {/* Referral Code */}
+          <Text style={styles.label}>Referral Code</Text>
+          <Text style={styles.text}>{userProfile?.referralCode}</Text>
 
-      <Collapsible title="Light and Dark Mode Components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user's current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
+          {/* Referral By */}
+          {userProfile?.referredBy && (
+            <>
+              <Text style={styles.label}>Referred By</Text>
+              <Text style={styles.text}>{userProfile?.referredBy}</Text>
+            </>
+          )}
 
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful{' '}
-          <ThemedText type="defaultSemiBold" style={{ fontFamily: Fonts.mono }}>
-            react-native-reanimated
-          </ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+          {/* Edit or Save Button */}
+          <TouchableOpacity
+            onPress={isEditing ? handleSaveProfile : handleEditProfile}
+            style={styles.button}
+          >
+            <Text style={styles.buttonText}>{isEditing ? "Save" : "Edit"}</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <Text>Loading...</Text>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: "#fff",
   },
-  titleContainer: {
-    flexDirection: 'row',
-    gap: 8,
+  headerText: {
+    fontSize: 24,
+    fontWeight: "600",
+    marginBottom: 20,
+    textAlign: "center",
   },
-  mainText: {
-    color: '#fff',
-    fontSize: 18,
-    marginVertical: 15,
-    textAlign: 'center',
+  avatarContainer: {
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  avatar: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 10,
+  },
+  text: {
+    fontSize: 16,
+    marginTop: 5,
+    color: "#333",
+  },
+  input: {
+    fontSize: 16,
+    marginTop: 5,
+    borderWidth: 1,
+    padding: 8,
+    borderRadius: 8,
+    borderColor: "#ddd",
+  },
+  button: {
+    marginTop: 20,
+    backgroundColor: "#007bff",
+    padding: 15,
+    borderRadius: 8,
+  },
+  buttonText: {
+    color: "#fff",
+    textAlign: "center",
+    fontWeight: "600",
   },
 });
