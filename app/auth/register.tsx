@@ -3,6 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator 
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../../firebase/firebaseConfig";
 import { Link, useRouter } from "expo-router";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../../firebase/firestore"; // Make sure to import your Firestore instance
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -28,8 +30,20 @@ export default function RegisterScreen() {
     setLoading(true);
 
     try {
-      await createUserWithEmailAndPassword(auth, email.trim(), password);
-      router.replace("/"); // send user to home after account creation
+      // Create the user in Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const user = userCredential.user;
+
+      // Check if user profile exists in Firestore
+      const userProfileDoc = await getDoc(doc(db, "users", user.uid));
+
+      // If profile does not exist, redirect to the profile setup screen
+      if (!userProfileDoc.exists()) {
+        router.replace("/auth/profileSetup"); // Redirect to profile setup if not completed
+      } else {
+        // If profile exists, redirect to home page (tabs)
+        router.replace("/"); // since the root of your tabs already redirects to index
+      }
     } catch (err: any) {
       setErrorMsg(err.message);
     }

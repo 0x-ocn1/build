@@ -3,7 +3,6 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
-
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
@@ -16,7 +15,10 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
+        {/* Make sure (tabs) is the main entry point */}
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/* Add the profileSetup screen for when it's required */}
+        <Stack.Screen name="auth/profileSetup" options={{ presentation: 'modal', title: 'Complete Profile' }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />
