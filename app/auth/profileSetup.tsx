@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, Image, Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { auth } from "../../firebase/auth";
+
 import { db } from "../../firebase/firestore";
 import { storage } from "../../firebase/storage";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
