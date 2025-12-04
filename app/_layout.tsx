@@ -2,45 +2,41 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { auth } from '../firebase/auth'; // Firebase Auth
+import { auth } from '../firebase/auth';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { Image } from 'react-native';
 import { doc, getDoc } from "firebase/firestore";
-import { db } from '../firebase/firestore'; // Firebase Firestore
+import { db } from '../firebase/firestore';
 
 export const unstable_settings = {
-  anchor: '(tabs)', // Navigates to tabs once authenticated
+  anchor: '(tabs)',
 };
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
-  const [loading, setLoading] = useState(true); // Track loading state
-  const [isAuthenticated, setIsAuthenticated] = useState(false); // Track auth state
-  const [profileCompleted, setProfileCompleted] = useState(false); // Track if profile is completed
-  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [profileCompleted, setProfileCompleted] = useState(false);
 
   useEffect(() => {
     const checkAuthAndProfile = async () => {
       const user = auth.currentUser;
       if (user) {
         setIsAuthenticated(true);
-        
-        // Fetch the user's profile from Firestore
+
         const userRef = doc(db, "users", user.uid);
         const userDoc = await getDoc(userRef);
-        
+
         if (userDoc.exists()) {
-          // Check if profile is set up (e.g., check if the username exists)
           setProfileCompleted(!!userDoc.data().username);
         } else {
           setProfileCompleted(false);
         }
-
-        setLoading(false);
       } else {
         setIsAuthenticated(false);
-        setLoading(false);
       }
+
+      setLoading(false);
     };
 
     checkAuthAndProfile();
@@ -52,23 +48,51 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
+      <Stack
+        screenOptions={{
+          headerTitle: () => (
+            <Image
+              source={require("../assets/images/icon.png")}
+              style={{
+                width: 140,
+                height: 40,
+                resizeMode: "contain",
+              }}
+            />
+          ),
+          headerStyle: {
+            backgroundColor: "#000"
+          },
+          headerTintColor: "#fff",
+        }}
+      >
         {isAuthenticated ? (
           profileCompleted ? (
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="(tabs)"
+              options={{ headerShown: false }}  // Tabs already handle their own header
+            />
           ) : (
-            <Stack.Screen name="auth/profileSetup" options={{ presentation: 'modal', title: 'Complete Profile' }} />
+            <Stack.Screen
+              name="auth/profileSetup"
+              options={{ headerShown: true }}
+            />
           )
         ) : (
           <>
-            <Stack.Screen name="auth/register" options={{ title: 'Register' }} />
-            <Stack.Screen name="auth/login" options={{ title: 'Login' }} />
+            <Stack.Screen name="auth/register" options={{ headerShown: true }} />
+            <Stack.Screen name="auth/login" options={{ headerShown: true }} />
+            <Stack.Screen name="auth/forgot" options={{ headerShown: true }} />
           </>
         )}
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+
+        <Stack.Screen
+          name="modal"
+          options={{ presentation: 'modal' }}
+        />
       </Stack>
+
       <StatusBar style="auto" />
     </ThemeProvider>
   );
 }
-
