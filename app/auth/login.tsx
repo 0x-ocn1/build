@@ -63,7 +63,8 @@ const docSnap = await getDoc(userRef);
 if (!docSnap.exists()) {
   router.replace("/auth/profileSetup");
 } else {
-  router.replace("/");
+ router.replace("/(tabs)");
+
 }
 
 

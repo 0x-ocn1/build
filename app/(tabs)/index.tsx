@@ -1,3 +1,4 @@
+// app/(tabs)/index.tsx
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -9,184 +10,36 @@ import {
   Animated,
   Dimensions,
 } from "react-native";
-
-import { MotiView } from "moti";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MotiView, MotiText } from "moti";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-
-import { auth, db } from "../../firebase/firebaseConfig"; // ✅ Correct
-import { doc, getDoc } from "firebase/firestore";         // ✅ SDK import stays
-
-import { startMining, stopMining, claimMiningRewards } from "../../firebase/mining";  
-// ✅ Keep this if mining.ts still exists
-
 import { LinearGradient } from "expo-linear-gradient";
+import { auth } from "../../firebase/firebaseConfig";
+import { useMining } from "../../hooks/useMining";
 
 const { width } = Dimensions.get("window");
 
-
 export default function MiningDashboard() {
   const router = useRouter();
-  const [miningData, setMiningData] = useState<any>(null);
-  const [userProfile, setUserProfile] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [referralBonus, setReferralBonus] = useState(0);
-  const [mining, setMining] = useState(false);
-  const [balance, setBalance] = useState(0);
-  const [accumulationRate, setAccumulationRate] = useState({ perSecond: 0, perMinute: 0, perHour: 0 });
+  const { miningData, userProfile, isLoading, start, stop, claim, getLiveBalance } =
+    useMining();
 
-  // Animated number for balance
   const animatedBalance = useRef(new Animated.Value(0)).current;
-
-  // Animated halo for header
-  const haloSpin = useRef(new Animated.Value(0)).current;
+  const miningActive = miningData?.miningActive ?? false;
+  const balanceBase = miningData?.balance ?? 0;
 
   useEffect(() => {
+    const toVal = Number(getLiveBalance() ?? balanceBase);
     Animated.timing(animatedBalance, {
-      toValue: balance,
+      toValue: toVal,
       duration: 700,
       useNativeDriver: false,
     }).start();
-  }, [balance, animatedBalance]);
+  }, [getLiveBalance, balanceBase]);
 
-  useEffect(() => {
-    Animated.loop(
-      Animated.timing(haloSpin, {
-        toValue: 1,
-        duration: 12000,
-        useNativeDriver: true,
-      })
-    ).start();
-  }, [haloSpin]);
-
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
-      if (!user) {
-        // when typed routes are strict, route helpers get picky: cast avoids compile-time errors
-        router.replace("/auth/register" as unknown as any);
-        return;
-      }
-
-      // Fetch user doc
-      const userRef = doc(db, "users", user.uid);
-      const userSnap = await getDoc(userRef);
-
-      if (!userSnap.exists()) {
-        // User logged in but no Firestore profile yet
-        router.replace("/auth/register" as unknown as any);
-        return;
-      }
-
-      const userData = userSnap.data();
-
-      // Check profile setup (username empty)
-      if (!userData.profile || !userData.profile.username) {
-        router.replace("/auth/profileSetup" as unknown as any);
-        return;
-      }
-
-      // Everything valid → continue original dashboard logic
-      try {
-        const miningRef = doc(db, "miningData", user.uid);
-        const miningSnap = await getDoc(miningRef);
-        const miningData = miningSnap.data();
-
-        if (!miningData) {
-          Alert.alert("No Mining Data", "We couldn't find mining data for your account.");
-          setIsLoading(false);
-          return;
-        }
-
-        setUserProfile(userData);
-        setMiningData(miningData);
-        setBalance(miningData.balance || 0);
-
-        setAccumulationRate({
-          perSecond: ((miningData.ratePerHour ?? (miningData.balance || 0)) / 3600) || 0,
-          perMinute: ((miningData.ratePerHour ?? (miningData.balance || 0)) / 60) || 0,
-          perHour: miningData.ratePerHour ?? (miningData.balance || 0),
-        });
-
-        if (userData.profile.referredBy) {
-          const referrerRef = doc(db, "users", userData.profile.referredBy);
-          const refSnap = await getDoc(referrerRef);
-
-          if (refSnap.exists()) {
-            const referrerData = refSnap.data();
-            setReferralBonus((referrerData?.referrals?.totalReferred || 0) * 0.1);
-          }
-        }
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setIsLoading(false);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [router]);
-
-  const handleStartStopMining = async () => {
-    const user = auth.currentUser;
-    if (!user) {
-      router.push("/auth/login" as unknown as any);
-      return;
-    }
-
-    try {
-      if (mining) {
-        await stopMining(user.uid);
-        setMining(false);
-      } else {
-        await startMining(user.uid);
-        setMining(true);
-      }
-    } catch (err) {
-      console.error(err);
-      Alert.alert("Error", "Couldn't toggle mining. Try again.");
-    }
-  };
-
-  const handleClaimRewards = async () => {
-    const user = auth.currentUser;
-    if (!user) {
-      router.push("/auth/login" as unknown as any);
-      return;
-    }
-
-    try {
-      const reward = await claimMiningRewards(user.uid);
-      if (typeof reward === "number") {
-        setBalance((prev) => prev + reward);
-      }
-    } catch (err) {
-      console.error(err);
-      Alert.alert("Error", "Claim failed. Try again later.");
-    }
-  };
-
-  // Animated balance display component
-  const AnimatedBalance = () => {
-    const [val, setVal] = useState(balance);
-
-    useEffect(() => {
-      const id = animatedBalance.addListener(({ value }) => {
-        setVal(Number(value.toFixed(2)));
-      });
-      return () => animatedBalance.removeListener(id);
-    }, [animatedBalance]);
-
-    return (
-      <Text style={styles.balance}>
-        {val.toFixed(2)} <Text style={styles.vadText}>VAD</Text>
-      </Text>
-    );
-  };
-
-  // animated rotation value for the memory icon
   const spinValue = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (mining) {
+    if (miningActive) {
       Animated.loop(
         Animated.timing(spinValue, {
           toValue: 1,
@@ -198,187 +51,187 @@ export default function MiningDashboard() {
       spinValue.stopAnimation();
       spinValue.setValue(0);
     }
-  }, [mining, spinValue]);
+  }, [miningActive]);
 
   const spin = spinValue.interpolate({
     inputRange: [0, 1],
     outputRange: ["0deg", "360deg"],
   });
 
-  // header halo style animation
-  const haloRotate = haloSpin.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
-  });
+  const handleStartStop = async () => {
+    const user = auth.currentUser;
+    if (!user) return router.push("/auth/login" as any);
+
+    try {
+      miningActive ? await stop() : await start();
+    } catch (err) {
+      Alert.alert("Error", "Couldn't toggle mining.");
+    }
+  };
+
+  const handleClaim = async () => {
+    const user = auth.currentUser;
+    if (!user) return router.push("/auth/login" as any);
+
+    try {
+      const reward = await claim();
+      Alert.alert("Claimed", `${reward?.toFixed(4) ?? 0} VAD`);
+    } catch (err) {
+      Alert.alert("Error", "Claim failed.");
+    }
+  };
 
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6C63FF" />
+        <ActivityIndicator size="large" color="#8B5CF6" />
       </View>
     );
   }
 
+  const AnimatedBalance = () => {
+    const [val, setVal] = useState(0);
+    useEffect(() => {
+      const id = animatedBalance.addListener(({ value }) => {
+        setVal(Number(value));
+      });
+      return () => animatedBalance.removeListener(id);
+    }, []);
+
+    return (
+      <MotiText
+        from={{ opacity: 0, translateY: 6 }}
+        animate={{ opacity: 1, translateY: 0 }}
+        transition={{ duration: 400 }}
+        style={styles.balance}
+      >
+        {val.toFixed(4)} <Text style={styles.vadText}>VAD</Text>
+      </MotiText>
+    );
+  };
+
+  const perSecond = miningActive ? 4.8 / (24 * 3600) : 0;
+  const perMinute = perSecond * 60;
+  const perHour = perMinute * 60;
+
   return (
     <View style={styles.screen}>
-      {/* animated halo background */}
-      <Animated.View style={[styles.halo, { transform: [{ rotate: haloRotate }] }]} pointerEvents="none" />
-
-      <LinearGradient
-        colors={["rgba(99,102,241,0.12)", "transparent"]}
-        style={styles.headerGradient}
-        start={[0, 0]}
-        end={[1, 0]}
+      {/* FLOATING SIDE NAV */}
+      <MotiView
+        from={{ opacity: 0, translateX: 40 }}
+        animate={{ opacity: 1, translateX: 0 }}
+        transition={{ type: "timing", duration: 600 }}
+        style={styles.floatingDock}
       >
-        <MotiView
-          from={{ opacity: 0, translateY: -6 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: "timing", duration: 550 }}
-          style={styles.header}
-        >
-          <Text style={styles.title}>⛏️ VAD Mining</Text>
-          <Text style={styles.subtitle}>Passive rewards, modern experience</Text>
-        </MotiView>
+        {/* EXPLORE (Marketplace) */}
+        <Pressable onPress={() => router.push("/(tabs)/explore")}>
+          {({ pressed }) => (
+            <View
+              style={[
+                styles.dockBtn,
+                { backgroundColor: pressed ? "#6D28D9" : "#8B5CF6" },
+              ]}
+            >
+              <Ionicons name="storefront-outline" size={26} color="#fff" />
+            </View>
+          )}
+        </Pressable>
+
+        {/* PROFILE */}
+        <Pressable onPress={() => router.push("/(tabs)/profile")}>
+          {({ pressed }) => (
+            <View
+              style={[
+                styles.dockBtn,
+                { backgroundColor: pressed ? "#6D28D9" : "#8B5CF6" },
+              ]}
+            >
+              <Ionicons name="person-circle-outline" size={28} color="#fff" />
+            </View>
+          )}
+        </Pressable>
+      </MotiView>
+
+      {/* HEADER CARD */}
+      <LinearGradient colors={["#2D1E69", "#0F0A2A"]} style={styles.headerCard}>
+        <MotiText style={styles.headerTitle}>VAD Mining</MotiText>
+        <Text style={styles.headerSubtitle}>
+          Earn up to 4.8 VAD every 24 hours
+        </Text>
       </LinearGradient>
 
+      {/* BALANCE CARD */}
       <MotiView
-        from={{ opacity: 0, translateY: 20, scale: 0.98 }}
-        animate={{ opacity: 1, translateY: 0, scale: 1 }}
-        transition={{ type: "spring", damping: 14, stiffness: 120 }}
-        style={styles.card}
+        from={{ opacity: 0, translateY: 20 }}
+        animate={{ opacity: 1, translateY: 0 }}
+        transition={{ type: "timing", duration: 600 }}
+        style={styles.glassCard}
       >
-        <View style={styles.cardRow}>
-          <View>
-            <Text style={styles.cardLabel}>Current Balance</Text>
+        <View style={styles.balanceRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardLabel}>Your Balance</Text>
             <AnimatedBalance />
           </View>
 
-          <MotiView
-            from={{ rotate: "0deg" }}
-            animate={{ rotate: mining ? "360deg" : "0deg" }}
-            transition={{ loop: mining, type: "timing", duration: 3500 }}
-            style={styles.pulse}
-          >
-            <Animated.View style={{ transform: [{ rotate: spin }] }}>
-              <MaterialIcons name="memory" size={28} color="white" />
-            </Animated.View>
-          </MotiView>
+          <Animated.View style={[styles.miningIcon, { transform: [{ rotate: spin }] }]}>
+            <Ionicons name="hardware-chip" size={30} color="#fff" />
+          </Animated.View>
         </View>
 
-        <View style={styles.rateRow}>
-          <View style={styles.rateBox}>
-            <Text style={styles.rateLabel}>/sec</Text>
-            <Text style={styles.rateValue}>{accumulationRate.perSecond.toFixed(4)}</Text>
+        <View style={styles.metricsRow}>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>/sec</Text>
+            <Text style={styles.metricValue}>{perSecond.toFixed(6)}</Text>
           </View>
-          <View style={styles.rateBox}>
-            <Text style={styles.rateLabel}>/min</Text>
-            <Text style={styles.rateValue}>{accumulationRate.perMinute.toFixed(3)}</Text>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>/min</Text>
+            <Text style={styles.metricValue}>{perMinute.toFixed(5)}</Text>
           </View>
-          <View style={styles.rateBox}>
-            <Text style={styles.rateLabel}>/hour</Text>
-            <Text style={styles.rateValue}>{accumulationRate.perHour.toFixed(2)}</Text>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>/hour</Text>
+            <Text style={styles.metricValue}>{perHour.toFixed(4)}</Text>
           </View>
         </View>
       </MotiView>
 
-      {referralBonus > 0 && (
-        <MotiView
-          from={{ opacity: 0, translateY: 10 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: "timing", duration: 350 }}
-          style={styles.bonusCard}
-        >
-          <Text style={styles.bonusLabel}>Referral Bonus</Text>
-          <Text style={styles.bonusAmount}>+{referralBonus.toFixed(2)} VAD</Text>
-        </MotiView>
-      )}
-
-      <View style={styles.iconRow}>
-        <Pressable
-          onPress={() => router.push("/profile")}
-          style={{ flex: 1, marginHorizontal: 6 }}
-        >
-          {({ pressed }: { pressed: boolean }) => (
+      {/* CONTROLS */}
+      <View style={styles.controls}>
+        <Pressable onPress={handleStartStop} style={{ width: "100%" }}>
+          {({ pressed }) => (
             <MotiView
-              animate={{ scale: pressed ? 0.96 : 1, opacity: pressed ? 0.95 : 1 }}
-              transition={{ type: "spring" }}
-              style={styles.iconButton}
+              animate={{ scale: pressed ? 0.97 : 1 }}
+              style={[
+                styles.mainButton,
+                miningActive ? styles.stopButton : styles.startButton,
+              ]}
             >
-              <MaterialIcons name="account-circle" size={26} color="#4B5563" />
-              <Text style={styles.iconLabel}>Profile</Text>
+              <MaterialIcons
+                name={miningActive ? "pause" : "play-arrow"}
+                size={22}
+                color="#fff"
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.mainButtonText}>
+                {miningActive ? "Stop Mining" : "Start Mining"}
+              </Text>
             </MotiView>
           )}
         </Pressable>
 
-        <Pressable
-          onPress={() => router.push("/explore")}
-          style={{ flex: 1, marginHorizontal: 6 }}
-        >
-          {({ pressed }: { pressed: boolean }) => (
+        <Pressable onPress={handleClaim} style={{ marginTop: 10 }}>
+          {({ pressed }) => (
             <MotiView
-              animate={{ scale: pressed ? 0.96 : 1, opacity: pressed ? 0.95 : 1 }}
-              transition={{ type: "spring" }}
-              style={styles.iconButton}
+              animate={{ scale: pressed ? 0.97 : 1 }}
+              style={styles.claimButton}
             >
-              <MaterialIcons name="search" size={26} color="#4B5563" />
-              <Text style={styles.iconLabel}>Explore</Text>
-            </MotiView>
-          )}
-        </Pressable>
-
-        <Pressable onPress={() => router.push("/auth/login")} style={{ flex: 1, marginHorizontal: 6 }}>
-          {({ pressed }: { pressed: boolean }) => (
-            <MotiView
-              animate={{ scale: pressed ? 0.96 : 1, opacity: pressed ? 0.95 : 1 }}
-              transition={{ type: "spring" }}
-              style={styles.iconButton}
-            >
-              <MaterialIcons name="logout" size={26} color="#4B5563" />
-              <Text style={styles.iconLabel}>Sign Out</Text>
+              <MaterialIcons name="redeem" size={20} color="#0F0A2A" />
+              <Text style={styles.claimText}>Claim Rewards</Text>
             </MotiView>
           )}
         </Pressable>
       </View>
 
-      <MotiView
-        from={{ opacity: 0, translateY: 30 }}
-        animate={{ opacity: 1, translateY: 0 }}
-        transition={{ type: "timing", duration: 400 }}
-        style={styles.controls}
-      >
-        <Pressable onPress={handleStartStopMining} style={{ width: "100%" }}>
-          {({ pressed }: { pressed: boolean }) => (
-            <MotiView
-              animate={{ scale: pressed ? 0.98 : 1 }}
-              transition={{ type: "spring" }}
-              style={[styles.mainButton, mining ? styles.stopButton : styles.startButton]}
-            >
-              <MaterialIcons
-                name={mining ? "pause-circle-filled" : "play-circle-filled"}
-                size={20}
-                color="white"
-                style={{ marginRight: 10 }}
-              />
-              <Text style={styles.mainButtonText}>{mining ? "Stop Mining" : "Start Mining"}</Text>
-            </MotiView>
-          )}
-        </Pressable>
-
-        <Pressable onPress={handleClaimRewards} style={{ marginTop: 10 }}>
-          {({ pressed }: { pressed: boolean }) => (
-            <MotiView
-              animate={{ scale: pressed ? 0.98 : 1 }}
-              transition={{ type: "spring" }}
-              style={styles.claimButton}
-            >
-              <MaterialIcons name="attach-money" size={18} color="#111827" />
-              <Text style={styles.claimText}>Claim Rewards</Text>
-            </MotiView>
-          )}
-        </Pressable>
-      </MotiView>
-
-      <View style={{ height: 48 }} />
+      <View style={{ height: 60 }} />
     </View>
   );
 }
@@ -386,196 +239,162 @@ export default function MiningDashboard() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#0F172A",
-    padding: 20,
+    backgroundColor: "#060B1A",
+    padding: 22,
     paddingTop: 40,
   },
-  halo: {
+
+  /* FLOATING SIDE NAV */
+  floatingDock: {
     position: "absolute",
-    width: 420,
-    height: 420,
-    borderRadius: 210,
-    backgroundColor: "rgba(99,102,241,0.06)",
-    top: -200,
-    left: -80,
-    zIndex: 0,
-  },
-  headerGradient: {
-    borderRadius: 12,
-    padding: 8,
-    marginBottom: 10,
-    zIndex: 2,
-  },
-  header: {
-    marginBottom: 6,
-  },
-  title: {
-    color: "#F8FAFC",
-    fontSize: 28,
-    fontWeight: "800",
-  },
-  subtitle: {
-    color: "#94A3B8",
-    marginTop: 6,
-    fontSize: 13,
-  },
-  card: {
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
-    width: "100%",
+    right: 15,
+    top: 130,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 28,
+    borderColor: "rgba(255,255,255,0.12)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 12,
-    zIndex: 3,
+    zIndex: 999,
   },
-  cardRow: {
+  dockBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 25,
+    justifyContent: "center",
+    alignItems: "center",
+    marginVertical: 8,
+  },
+
+  headerCard: {
+    padding: 20,
+    borderRadius: 20,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  headerTitle: {
+    fontSize: 28,
+    color: "#fff",
+    fontWeight: "900",
+  },
+  headerSubtitle: {
+    color: "#C8CBEA",
+    marginTop: 6,
+    fontSize: 14,
+  },
+
+  glassCard: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.09)",
+    marginBottom: 18,
+  },
+
+  balanceRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
+
   cardLabel: {
-    color: "#94A3B8",
-    fontSize: 12,
-    marginBottom: 8,
+    color: "#9FA8C7",
+    fontSize: 13,
+    marginBottom: 6,
   },
+
   balance: {
-    color: "#F8FAFC",
-    fontSize: 36,
-    fontWeight: "800",
+    color: "#fff",
+    fontSize: 38,
+    fontWeight: "900",
   },
   vadText: {
     color: "#8B5CF6",
     fontSize: 18,
     fontWeight: "700",
   },
-  pulse: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#6C63FF",
+
+  miningIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#8B5CF6",
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#6C63FF",
-    shadowOpacity: 0.35,
+    shadowColor: "#8B5CF6",
+    shadowOpacity: 0.5,
     shadowRadius: 14,
   },
-  rateRow: {
-    marginTop: 14,
+
+  metricsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    marginTop: 18,
   },
-  rateBox: {
-    flex: 1,
-    marginRight: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: "rgba(255,255,255,0.02)",
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  rateLabel: {
-    color: "#94A3B8",
-    fontSize: 11,
-  },
-  rateValue: {
-    color: "#E6EEF8",
-    fontSize: 14,
-    fontWeight: "700",
-    marginTop: 4,
-  },
-  bonusCard: {
-    backgroundColor: "rgba(99,102,241,0.08)",
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "rgba(99,102,241,0.12)",
-    zIndex: 3,
-  },
-  bonusLabel: {
-    color: "#C7D2FE",
-    fontSize: 12,
-  },
-  bonusAmount: {
-    color: "#A78BFA",
-    fontSize: 20,
-    fontWeight: "800",
-    marginTop: 6,
-  },
-  iconRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 8,
-    marginBottom: 18,
-    zIndex: 3,
-  },
-  iconButton: {
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.02)",
+  metricBox: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: 12,
-    padding: 12,
-    // marginHorizontal: 6,
+    width: "30%",
     alignItems: "center",
-    justifyContent: "center",
   },
-  iconLabel: {
-    color: "#94A3B8",
+  metricLabel: {
+    color: "#9FA8C7",
     fontSize: 12,
-    marginTop: 6,
   },
+  metricValue: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
   controls: {
     width: "100%",
-    alignItems: "center",
-    zIndex: 3,
+    marginTop: 10,
   },
+
   mainButton: {
-    width: Math.min(width - 40, 520),
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
+    width: "100%",
+    paddingVertical: 16,
+    borderRadius: 14,
     flexDirection: "row",
     justifyContent: "center",
-    marginBottom: 12,
+    alignItems: "center",
   },
   startButton: {
     backgroundColor: "#10B981",
-    shadowColor: "#10B981",
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
   },
   stopButton: {
     backgroundColor: "#EF4444",
-    shadowColor: "#EF4444",
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
   },
   mainButtonText: {
     color: "#fff",
     fontWeight: "800",
-    fontSize: 16,
+    fontSize: 17,
   },
+
   claimButton: {
-    backgroundColor: "#F8FAFC",
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 10,
+    backgroundColor: "#fff",
+    paddingVertical: 12,
+    borderRadius: 12,
     flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
   },
   claimText: {
-    color: "#111827",
-    fontWeight: "700",
-    marginLeft: 8,
+    marginLeft: 6,
+    color: "#0F0A2A",
+    fontWeight: "800",
+    fontSize: 15,
   },
+
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#0F172A",
+    backgroundColor: "#060B1A",
   },
 });
