@@ -3,25 +3,21 @@
     "development": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk",
-        "newArchEnabled": true
+        "buildType": "apk"
       }
     },
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk",
-        "newArchEnabled": true
+        "buildType": "apk"
       }
     },
     "production": {
       "distribution": "store",
       "android": {
-        "buildType": "apk",
-        "newArchEnabled": true
+        "buildType": "apk"
       }
     }
   }
 }
-
 
