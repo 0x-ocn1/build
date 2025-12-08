@@ -1,27 +1,22 @@
 // components/AdBanner.tsx
-import React, { useMemo } from "react";
+import React from "react";
 import { View } from "react-native";
-import { BannerAd, BannerAdSize, TestIds } from "react-native-google-mobile-ads";
+import { AdMobBanner } from "expo-ads-admob";
 
 export default function AdBanner() {
-  // Always use test ad in dev
   const unitId = __DEV__
-    ? TestIds.BANNER
-    : "ca-app-pub-4533962949749202/7206578732";
-
-  // memoized request options (avoids reload crash)
-  const requestOptions = useMemo(() => {
-    return {
-      requestNonPersonalizedAdsOnly: false,
-    };
-  }, []);
+    ? "ca-app-pub-3940256099942544/6300978111" // Google test banner
+    : "ca-app-pub-4533962949749202/7206578732"; // your real ad ID
 
   return (
     <View style={{ alignItems: "center", marginVertical: 10 }}>
-      <BannerAd
-        size={BannerAdSize.FULL_BANNER}
-        unitId={unitId}
-        requestOptions={requestOptions}
+      <AdMobBanner
+        bannerSize="fullBanner"
+        adUnitID={unitId}
+        servePersonalizedAds
+        onDidFailToReceiveAdWithError={(err) => {
+          console.log("Ad failed to load:", err);
+        }}
       />
     </View>
   );
