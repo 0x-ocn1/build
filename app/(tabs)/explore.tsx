@@ -1,4 +1,5 @@
 //app/(tabs)/explore.tsx
+//app/(tabs)/explore.tsx
 import React, { useEffect, useRef } from "react";
 import {
   View,
@@ -15,9 +16,14 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebaseConfig";
 
+// ✅ Default export moved here
+export default function Explore() {
+  return <ExploreScreen />;
+}
 
 const { width } = Dimensions.get("window");
-const CARD_W = Math.floor((width - 48) / 2); // perfect grid width
+const CARD_W = Math.floor((width - 48) / 2);
+
 
 const SAMPLE_MARKET_ITEMS = [
   {
@@ -57,11 +63,6 @@ const SAMPLE_MARKET_ITEMS = [
     badge: "New",
   },
 ];
-
-
-export default function Explore() {
-  return <ExploreScreen />;
-}
 
 function ExploreScreen() {
   const user = auth.currentUser;

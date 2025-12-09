@@ -1,4 +1,4 @@
-//app/(tabs)/_layout.tsx
+// app/(tabs)/_layout.tsx
 import { Tabs } from "expo-router";
 import React from "react";
 import { Platform, View } from "react-native";
@@ -10,10 +10,14 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 
 let BlurView: any = null;
 
+// Safe BlurView import (iOS only)
 if (Platform.OS === "ios") {
-  BlurView = require("expo-blur").BlurView;
+  try {
+    BlurView = require("expo-blur").BlurView;
+  } catch (e) {
+    BlurView = View;
+  }
 }
-
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -27,7 +31,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: tint,
         tabBarInactiveTintColor: "#6B7280",
 
-        // ✅ Premium Floating Glass Tab Bar
+        // 🌫️ Floating Glass Tab Bar
         tabBarBackground: () =>
           Platform.OS === "ios" ? (
             <BlurView intensity={70} tint="dark" style={{ flex: 1 }} />
@@ -40,7 +44,7 @@ export default function TabLayout() {
           borderTopWidth: 0,
           elevation: 0,
           height: 72,
-          paddingBottom: 10,
+          paddingBottom: 12,
           paddingTop: 10,
           backgroundColor: "transparent",
         },
@@ -52,7 +56,7 @@ export default function TabLayout() {
         },
       }}
     >
-      {/* ✅ HOME */}
+      {/* HOME */}
       <Tabs.Screen
         name="index"
         options={{
@@ -67,7 +71,7 @@ export default function TabLayout() {
         }}
       />
 
-      {/* ✅ EXPLORE */}
+      {/* EXPLORE */}
       <Tabs.Screen
         name="explore"
         options={{
@@ -82,7 +86,7 @@ export default function TabLayout() {
         }}
       />
 
-      {/* ✅ PROFILE */}
+      {/* PROFILE */}
       <Tabs.Screen
         name="profile"
         options={{

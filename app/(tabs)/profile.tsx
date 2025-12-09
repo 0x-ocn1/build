@@ -8,6 +8,7 @@ import {
   Animated,
   Easing,
   Pressable,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase/firebaseConfig";
@@ -35,6 +36,7 @@ function ProfileScreen() {
 
   const fade = useRef(new Animated.Value(0)).current;
 
+  /* ---------- Page Animation ---------- */
   useEffect(() => {
     Animated.timing(fade, {
       toValue: 1,
@@ -44,7 +46,7 @@ function ProfileScreen() {
     }).start();
   }, []);
 
-  // ✅ SINGLE SAFE REALTIME LISTENER
+  /* ---------- Firebase Live Listener ---------- */
   useEffect(() => {
     if (!uid) return;
 
@@ -53,9 +55,8 @@ function ProfileScreen() {
       const data = snap.data();
 
       setUsername(data.username || "");
-setReferralCode(data.referralCode || "");
-setReferredBy(data.referredBy || null);
-
+      setReferralCode(data.referralCode || "");
+      setReferredBy(data.referredBy || null);
 
       setMiningBalance(data.mining?.balance || 0);
       setDailyTotal(data.dailyClaim?.totalEarned || 0);
@@ -70,9 +71,13 @@ setReferredBy(data.referredBy || null);
   const totalEarned =
     miningBalance + dailyTotal + boostBalance + watchEarnTotal;
 
+  /* ---------- Copy Referral Code ---------- */
   const copyCode = async () => {
     if (!referralCode) return;
+
     await Clipboard.setStringAsync(referralCode);
+
+    Alert.alert("Copied!", "Referral code copied to clipboard.");
   };
 
   return (
@@ -119,9 +124,7 @@ setReferredBy(data.referredBy || null);
         {/* REFERRED BY */}
         <View style={styles.card}>
           <Text style={styles.label}>Referred By</Text>
-          <Text style={styles.value}>
-            {referredBy || "Not referred"}
-          </Text>
+          <Text style={styles.value}>{referredBy || "Not referred"}</Text>
         </View>
 
         {/* REFERRAL COUNT */}
@@ -137,7 +140,7 @@ setReferredBy(data.referredBy || null);
   );
 }
 
-// ✅ PREMIUM MINI CARD COMPONENT
+/* ---------- Reusable Statistic Card ---------- */
 function StatCard({
   title,
   value,
@@ -156,6 +159,7 @@ function StatCard({
   );
 }
 
+/* ---------- Styles ---------- */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
