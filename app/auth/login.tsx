@@ -12,20 +12,8 @@ import {
 } from "react-native";
 import { Link, useRouter } from "expo-router";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth, db, storage } from "../../firebase/firebaseConfig";
+import { auth, db } from "../../firebase/firebaseConfig";
 import { doc, getDoc } from "firebase/firestore";
-
-import Animated, {
-  FadeInUp,
-  FadeInDown,
-  FadeIn,
-  SlideInDown,
-  SlideInUp,
-  withTiming,
-  useAnimatedStyle,
-  withSequence,
-} from "react-native-reanimated";
-
 import { Ionicons } from "@expo/vector-icons";
 
 /* ---------- Expo Router Wrapper (DEFAULT EXPORT) ---------- */
@@ -43,6 +31,14 @@ function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  // SIMPLE SHAKE USING STATE, NOT REANIMATED
+  const [shake, setShake] = useState(false);
+  const triggerError = (msg: string) => {
+    setErrorMsg(msg);
+    setShake(true);
+    setTimeout(() => setShake(false), 200);
+  };
+
   const handleLogin = async () => {
     if (loading) return;
 
@@ -56,26 +52,22 @@ function LoginScreen() {
 
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
-
       const user = auth.currentUser;
-if (!user) {
-  triggerError("Login failed. Try again.");
-  setLoading(false);
-  return;
-}
 
-const userRef = doc(db, "users", user.uid);
-const docSnap = await getDoc(userRef);
+      if (!user) {
+        triggerError("Login failed. Try again.");
+        setLoading(false);
+        return;
+      }
 
-if (!docSnap.exists()) {
-  router.replace("/auth/profileSetup");
-} else {
- router.replace("/(tabs)");
+      const userRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(userRef);
 
-}
-
-
-
+      if (!docSnap.exists()) {
+        router.replace("/auth/profileSetup");
+      } else {
+        router.replace("/(tabs)");
+      }
     } catch (error: any) {
       let msg = "Login failed.";
 
@@ -90,61 +82,33 @@ if (!docSnap.exists()) {
     setLoading(false);
   };
 
-  // 🔥 Shake animation for errors
-  const [shake, setShake] = useState(false);
-  const errorStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateX: withTiming(shake ? 10 : 0, { duration: 80 }),
-      },
-    ],
-  }));
-  const triggerError = (msg: string) => {
-    setErrorMsg(msg);
-    setShake(true);
-    setTimeout(() => setShake(false), 150);
-  };
-
   return (
     <View style={styles.container}>
+      <Text style={styles.title}>Welcome Back</Text>
+      <Text style={styles.subtitle}>Log in to continue mining</Text>
 
-      {/* TITLE */}
-      <Animated.Text
-        entering={FadeInDown.delay(100)}
-        style={styles.title}
-      >
-        Welcome Back
-      </Animated.Text>
-
-      <Animated.Text
-        entering={FadeInDown.delay(200)}
-        style={styles.subtitle}
-      >
-        Log in to continue mining
-      </Animated.Text>
-
-      {/* ERROR */}
       {errorMsg ? (
-        <Animated.Text style={[styles.error, errorStyle]}>
+        <Text
+          style={[
+            styles.error,
+            shake && { transform: [{ translateX: -4 }] },
+          ]}
+        >
           {errorMsg}
-        </Animated.Text>
+        </Text>
       ) : null}
 
-      {/* EMAIL INPUT */}
-      <Animated.View entering={FadeInUp.delay(300)}>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor="#aaa"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={setEmail}
-        />
-      </Animated.View>
+      <TextInput
+        style={styles.input}
+        placeholder="Email"
+        placeholderTextColor="#aaa"
+        autoCapitalize="none"
+        keyboardType="email-address"
+        value={email}
+        onChangeText={setEmail}
+      />
 
-      {/* PASSWORD WITH TOGGLE */}
-      <Animated.View entering={FadeInUp.delay(400)} style={styles.passwordContainer}>
+      <View style={styles.passwordContainer}>
         <TextInput
           style={[styles.input, { paddingRight: 45 }]}
           placeholder="Password"
@@ -164,13 +128,9 @@ if (!docSnap.exists()) {
             color="#888"
           />
         </TouchableOpacity>
-      </Animated.View>
+      </View>
 
-      {/* REMEMBER ME */}
-      <Animated.View
-        entering={FadeIn.delay(450)}
-        style={styles.rememberRow}
-      >
+      <View style={styles.rememberRow}>
         <TouchableOpacity
           onPress={() => setRememberMe(!rememberMe)}
           style={styles.switchBox}
@@ -181,41 +141,32 @@ if (!docSnap.exists()) {
               rememberMe && { backgroundColor: "#5b3deb55" },
             ]}
           >
-            <Animated.View
+            <View
               style={[
                 styles.switchCircle,
-                rememberMe && { transform: [{ translateX: 18 }] },
+                rememberMe && { marginLeft: 18 },
               ]}
             />
           </View>
         </TouchableOpacity>
 
         <Text style={styles.rememberText}>Remember me</Text>
-      </Animated.View>
+      </View>
 
-      {/* LOGIN BUTTON */}
-      <Animated.View entering={FadeInUp.delay(550)}>
-        <Pressable
-          onPress={handleLogin}
-          style={({ pressed }) => [
-            styles.loginBtn,
-            pressed && { transform: [{ scale: 0.97 }] },
-          ]}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.loginText}>Login</Text>
-          )}
-        </Pressable>
-      </Animated.View>
+      <Pressable
+        onPress={handleLogin}
+        style={({ pressed }) => [
+          styles.loginBtn,
+          pressed && { transform: [{ scale: 0.97 }] },
+        ]}
+      >
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginText}>Login</Text>}
+      </Pressable>
 
-      {/* FORGOT LINK */}
       <Link href="/auth/forgot" style={styles.forgot}>
         Forgot Password?
       </Link>
 
-      {/* REGISTER LINK */}
       <View style={styles.row}>
         <Text style={styles.text}>Don't have an account? </Text>
         <Link href="/auth/register" style={styles.link}>
@@ -226,6 +177,7 @@ if (!docSnap.exists()) {
   );
 }
 
+/* ---------- STYLES ---------- */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -251,8 +203,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#222",
   },
-
-  // PASSWORD FIELD
   passwordContainer: {
     position: "relative",
   },
@@ -261,15 +211,10 @@ const styles = StyleSheet.create({
     right: 12,
     top: "30%",
   },
-
-  // REMEMBER ME
   rememberRow: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 10,
-  },
-  switchBox: {
-    marginRight: 10,
   },
   switchOuter: {
     width: 40,
@@ -290,7 +235,6 @@ const styles = StyleSheet.create({
     color: "#aaa",
     fontSize: 14,
   },
-
   loginBtn: {
     backgroundColor: "#5b3deb",
     padding: 16,
@@ -304,7 +248,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
-
   row: {
     flexDirection: "row",
     marginTop: 15,
@@ -317,16 +260,22 @@ const styles = StyleSheet.create({
     color: "#5b3deb",
     fontWeight: "bold",
   },
-
   error: {
     color: "#ff4f4f",
     marginBottom: 10,
   },
-
   forgot: {
     color: "#5b3deb",
     fontWeight: "bold",
     textAlign: "center",
     marginTop: 16,
   },
+
+  switchBox: {
+  marginTop: 20,
+  flexDirection: "row",
+  justifyContent: "center",
+  alignItems: "center",
+},
+
 });

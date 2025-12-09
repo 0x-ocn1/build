@@ -1,5 +1,4 @@
 //app/(tabs)/explore.tsx
-//app/(tabs)/explore.tsx
 import React, { useEffect, useRef } from "react";
 import {
   View,

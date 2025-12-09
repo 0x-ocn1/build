@@ -86,7 +86,8 @@ function RegisterScreen() {
       const profileSnap = await getDoc(doc(db, "users", user.uid));
 
       if (!profileSnap.exists()) router.replace("/auth/profileSetup");
-      else router.replace("/");
+      else router.replace("/(tabs)");
+
     } catch (err: any) {
       triggerError(err.message);
     }

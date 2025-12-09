@@ -93,7 +93,7 @@ function ProfileSetupScreen() {
       });
 
       Alert.alert("Success", "Profile saved!");
-       router.replace("/");
+        router.replace("/(tabs)");
     } catch (error: any) {
       Alert.alert("Error", error.message);
     }

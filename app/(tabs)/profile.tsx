@@ -1,4 +1,5 @@
 // app/(tabs)/profile.tsx
+
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -15,58 +16,84 @@ import { auth, db } from "../../firebase/firebaseConfig";
 import { doc, onSnapshot } from "firebase/firestore";
 import * as Clipboard from "expo-clipboard";
 
-/* ---------- Expo Router Wrapper (DEFAULT EXPORT) ---------- */
+/* ---------- Expo Router Default Export ---------- */
 export default function Profile() {
   return <ProfileScreen />;
 }
 
-/* ---------- Actual Screen Implementation ---------- */
+/* ---------- Main Screen ---------- */
 function ProfileScreen() {
-  const uid = auth.currentUser?.uid;
+  const uid = auth.currentUser?.uid ?? null;
 
-  const [username, setUsername] = useState("");
-  const [referralCode, setReferralCode] = useState("");
-  const [referredBy, setReferredBy] = useState<string | null>(null);
-
-  const [miningBalance, setMiningBalance] = useState(0);
-  const [dailyTotal, setDailyTotal] = useState(0);
-  const [boostBalance, setBoostBalance] = useState(0);
-  const [watchEarnTotal, setWatchEarnTotal] = useState(0);
-  const [referrals, setReferrals] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any | null>(null);
 
   const fade = useRef(new Animated.Value(0)).current;
 
-  /* ---------- Page Animation ---------- */
+  /* ---------- Page Fade Animation ---------- */
   useEffect(() => {
     Animated.timing(fade, {
       toValue: 1,
-      duration: 600,
-      easing: Easing.out(Easing.exp),
+      duration: 400,
+      easing: Easing.out(Easing.ease),
       useNativeDriver: true,
     }).start();
   }, []);
 
-  /* ---------- Firebase Live Listener ---------- */
+  /* ---------- Firebase Live Snapshot Listener ---------- */
   useEffect(() => {
-    if (!uid) return;
+    if (!uid) {
+      setLoading(false);
+      return;
+    }
 
-    const unsub = onSnapshot(doc(db, "users", uid), (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data();
+    const ref = doc(db, "users", uid);
 
-      setUsername(data.username || "");
-      setReferralCode(data.referralCode || "");
-      setReferredBy(data.referredBy || null);
-
-      setMiningBalance(data.mining?.balance || 0);
-      setDailyTotal(data.dailyClaim?.totalEarned || 0);
-      setBoostBalance(data.boost?.balance || 0);
-      setWatchEarnTotal(data.watchEarn?.totalEarned || 0);
-      setReferrals(data.referrals?.totalReferred || 0);
-    });
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        if (snap.exists()) {
+          setData(snap.data());
+        }
+        setLoading(false);
+      },
+      (error) => {
+        console.log("🔥 Firestore listener error:", error);
+        setLoading(false);
+      }
+    );
 
     return () => unsub();
   }, [uid]);
+
+  if (!uid) {
+    return (
+      <View style={styles.centered}>
+        <Text style={{ color: "#fff", fontSize: 18 }}>
+          User not logged in.
+        </Text>
+      </View>
+    );
+  }
+
+  if (loading || !data) {
+    return (
+      <View style={styles.centered}>
+        <Text style={{ color: "#fff" }}>Loading...</Text>
+      </View>
+    );
+  }
+
+  /* ---------- Safe Data Extraction ---------- */
+  const username = data.username ?? "Unknown User";
+  const referralCode = data.referralCode ?? "";
+  const referredBy = data.referredBy ?? "Not referred";
+
+  const miningBalance = data.mining?.balance ?? 0;
+  const dailyTotal = data.dailyClaim?.totalEarned ?? 0;
+  const boostBalance = data.boost?.balance ?? 0;
+  const watchEarnTotal = data.watchEarn?.totalEarned ?? 0;
+  const referrals = data.referrals?.totalReferred ?? 0;
 
   const totalEarned =
     miningBalance + dailyTotal + boostBalance + watchEarnTotal;
@@ -74,9 +101,7 @@ function ProfileScreen() {
   /* ---------- Copy Referral Code ---------- */
   const copyCode = async () => {
     if (!referralCode) return;
-
     await Clipboard.setStringAsync(referralCode);
-
     Alert.alert("Copied!", "Referral code copied to clipboard.");
   };
 
@@ -85,24 +110,21 @@ function ProfileScreen() {
       <ScrollView showsVerticalScrollIndicator={false}>
         <Text style={styles.pageTitle}>Your Profile</Text>
 
-        {/* AVATAR */}
+        {/* Avatar */}
         <View style={styles.avatarBox}>
           <Ionicons name="person" size={70} color="#8B5CF6" />
         </View>
 
-        {/* USERNAME */}
-        <View style={styles.card}>
-          <Text style={styles.label}>Username</Text>
-          <Text style={styles.value}>{username}</Text>
-        </View>
+        {/* Username */}
+        <Card label="Username" value={username} />
 
-        {/* TOTAL BALANCE */}
+        {/* Total Balance */}
         <View style={styles.mainCard}>
           <Text style={styles.mainLabel}>Total VAD Balance</Text>
           <Text style={styles.mainValue}>{totalEarned.toFixed(4)} VAD</Text>
         </View>
 
-        {/* STATS GRID */}
+        {/* Stat Cards */}
         <View style={styles.grid}>
           <StatCard title="Mining" value={miningBalance} icon="hardware-chip" />
           <StatCard title="Daily" value={dailyTotal} icon="calendar" />
@@ -110,7 +132,7 @@ function ProfileScreen() {
           <StatCard title="Watch" value={watchEarnTotal} icon="play-circle" />
         </View>
 
-        {/* REFERRAL CODE */}
+        {/* Referral Code */}
         <View style={styles.card}>
           <Text style={styles.label}>Your Referral Code</Text>
           <View style={styles.refRow}>
@@ -121,13 +143,10 @@ function ProfileScreen() {
           </View>
         </View>
 
-        {/* REFERRED BY */}
-        <View style={styles.card}>
-          <Text style={styles.label}>Referred By</Text>
-          <Text style={styles.value}>{referredBy || "Not referred"}</Text>
-        </View>
+        {/* Referred By */}
+        <Card label="Referred By" value={referredBy} />
 
-        {/* REFERRAL COUNT */}
+        {/* Referral Count */}
         <View style={styles.refCard}>
           <Ionicons name="people" size={28} color="#34D399" />
           <View>
@@ -140,7 +159,17 @@ function ProfileScreen() {
   );
 }
 
-/* ---------- Reusable Statistic Card ---------- */
+/* ---------- Generic Info Card ---------- */
+function Card({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.card}>
+      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.value}>{value}</Text>
+    </View>
+  );
+}
+
+/* ---------- Stat Card ---------- */
 function StatCard({
   title,
   value,
@@ -148,7 +177,7 @@ function StatCard({
 }: {
   title: string;
   value: number;
-  icon: any;
+  icon: keyof typeof Ionicons.glyphMap;
 }) {
   return (
     <View style={styles.statCard}>
@@ -165,6 +194,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#050814",
     padding: 20,
+  },
+
+  centered: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#050814",
   },
 
   pageTitle: {

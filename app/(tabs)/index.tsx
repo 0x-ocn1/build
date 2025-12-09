@@ -1,3 +1,4 @@
+//app/(tabs)/index.tsx
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import {
   View,
