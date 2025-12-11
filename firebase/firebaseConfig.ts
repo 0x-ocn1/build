@@ -1,30 +1,25 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
+import Constants from "expo-constants";
 import { initializeAuth, getReactNativePersistence } from "firebase/auth/react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDhykCGrx_g-EB6lHZi_KYSwQzJGM9znjw",
-  authDomain: "vad-app-4a6e8.firebaseapp.com",
-  projectId: "vad-app-4a6e8",
-  storageBucket: "vad-app-4a6e8.firebasestorage.app",
-  messagingSenderId: "98354868664",
-  appId: "1:98354868664:android:4317c6de58777ce72f9f4d"
+  apiKey: Constants.expoConfig?.extra?.firebaseApiKey,
+  authDomain: Constants.expoConfig?.extra?.firebaseAuthDomain,
+  projectId: Constants.expoConfig?.extra?.firebaseProjectId,
+  storageBucket: Constants.expoConfig?.extra?.firebaseStorageBucket,
+  messagingSenderId: Constants.expoConfig?.extra?.firebaseSenderId,
+  appId: Constants.expoConfig?.extra?.firebaseAppId,
 };
-
 
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// ----------------------------------
-// 🔥 Lazy Auth Singleton
-// ----------------------------------
+// Lazy Auth
 let authInstance: ReturnType<typeof initializeAuth> | null = null;
 
 export const getAuthInstance = async () => {
   if (authInstance) return authInstance;
 
-  const { initializeAuth, getReactNativePersistence } = await import(
-    "firebase/auth/react-native"
-  );
+  const { getReactNativePersistence } = await import("firebase/auth/react-native");
   const AsyncStorageModule = await import("@react-native-async-storage/async-storage");
 
   authInstance = initializeAuth(app, {
@@ -34,20 +29,16 @@ export const getAuthInstance = async () => {
   return authInstance;
 };
 
-// ----------------------------------
-// 🔥 Lazy Firestore
-// ----------------------------------
+// Lazy Firestore
 export const getDb = async () => {
-  await getAuthInstance(); // ❤️ Ensures Auth registered first
+  await getAuthInstance();
   const { getFirestore } = await import("firebase/firestore");
   return getFirestore(app);
 };
 
-// ----------------------------------
-// 🔥 Lazy Storage
-// ----------------------------------
+// Lazy Storage
 export const getStorageInstance = async () => {
-  await getAuthInstance(); // ❤️ Same logic
+  await getAuthInstance();
   const { getStorage } = await import("firebase/storage");
   return getStorage(app);
 };
