@@ -13,34 +13,21 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
+import { supabase } from "../../supabase/client";
+import { getUserData } from "../../services/user";
 
-/* ---------- Expo Router Default Export ---------- */
 export default function Profile() {
   return <ProfileScreen />;
 }
 
-/* -------------------------------------------------
-    🔥 Correct Lazy Firebase Loader
--------------------------------------------------- */
-async function loadFirebase() {
-  const firebase = await import("../../firebase/firebaseConfig");
-
-  return {
-    getAuth: firebase.getAuthInstance,
-    getDb: firebase.getDb,
-  };
-}
-
-/* ---------- Main Screen ---------- */
 function ProfileScreen() {
   const [uid, setUid] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any | null>(null);
-  const [mounted, setMounted] = useState(false);
 
   const fade = useRef(new Animated.Value(0)).current;
 
-  /* ---------- Fade Animation ---------- */
+  /* ---------- Fade animation ---------- */
   useEffect(() => {
     Animated.timing(fade, {
       toValue: 1,
@@ -50,31 +37,20 @@ function ProfileScreen() {
     }).start();
   }, []);
 
-  /* ---------- Mount Listener ---------- */
-  useEffect(() => {
-    setMounted(true);
-    return () => setMounted(false);
-  }, []);
-
   /* -------------------------------------------------
-      🔥 Load Auth & Set UID
+      🔥 Load Supabase Auth & Set UID
   -------------------------------------------------- */
   useEffect(() => {
     (async () => {
-      try {
-        const { getAuth } = await loadFirebase();
-        const auth = await getAuth();
-        const user = auth.currentUser;
-        setUid(user?.uid ?? null);
-      } catch (err) {
-        console.log("Lazy auth load error:", err);
-        setUid(null);
-      }
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user;
+      setUid(user?.id ?? null);
     })();
   }, []);
 
   /* -------------------------------------------------
-      🔥 Firestore Listener
+      🔥 Fetch User Data From Supabase
+      (NO REALTIME — Supabase has no onSnapshot)
   -------------------------------------------------- */
   useEffect(() => {
     if (!uid) {
@@ -82,45 +58,31 @@ function ProfileScreen() {
       return;
     }
 
-    let unsub: any;
+    let active = true;
 
-    const listen = async () => {
-      try {
-        const { getDb } = await loadFirebase();
-        const db = await getDb();
-
-        const { doc, onSnapshot } = await import("firebase/firestore");
-
-        const ref = doc(db, "users", uid);
-
-        unsub = onSnapshot(
-          ref,
-          (snap) => {
-            if (!mounted) return;
-            if (snap.exists()) setData(snap.data());
-            setLoading(false);
-          },
-          (error) => {
-            console.log("Snapshot error:", error);
-            if (mounted) setLoading(false);
-          }
-        );
-      } catch (err) {
-        console.log("Lazy Firestore error:", err);
-        if (mounted) setLoading(false);
+    const load = async () => {
+      setLoading(true);
+      const response = await getUserData(uid);
+      if (active) {
+        setData(response);
+        setLoading(false);
       }
     };
 
-    listen();
+    load();
 
-    return () => unsub && unsub();
-  }, [uid, mounted]);
+    return () => {
+      active = false;
+    };
+  }, [uid]);
 
-  /* ---------- No UID ---------- */
+  /* ---------- No user ---------- */
   if (!uid) {
     return (
       <View style={styles.centered}>
-        <Text style={{ color: "#fff", fontSize: 18 }}>User not logged in.</Text>
+        <Text style={{ color: "#fff", fontSize: 18 }}>
+          User not logged in.
+        </Text>
       </View>
     );
   }
@@ -134,21 +96,30 @@ function ProfileScreen() {
     );
   }
 
-  /* ---------- Safe Data Access ---------- */
-  const username = data?.username ?? "Unknown User";
-  const referralCode = data?.referralCode ?? "";
-  const referredBy = data?.referredBy ?? "Not referred";
+  /* -------------------------------------------------
+      🔥 Safe Supabase Data Mapping
+  -------------------------------------------------- */
+  const profile = data.profile ?? {};
+  const mining = data.mining ?? {};
+  const referrals = data.referrals ?? {};
+  const dailyClaim = data.dailyClaim ?? {};
+  const boost = data.boost ?? {};
+  const watchEarn = data.watchEarn ?? {};
 
-  const miningBalance = data?.mining?.balance ?? 0;
-  const dailyTotal = data?.dailyClaim?.totalEarned ?? 0;
-  const boostBalance = data?.boost?.balance ?? 0;
-  const watchEarnTotal = data?.watchEarn?.totalEarned ?? 0;
-  const referrals = data?.referrals?.totalReferred ?? 0;
+  const username = profile.username || "Unknown User";
+  const referralCode = profile.referral_code || "";
+  const referredBy = profile.referred_by || "Not referred";
+
+  const miningBalance = mining.balance ?? 0;
+  const dailyTotal = dailyClaim.total_earned ?? 0;
+  const boostBalance = boost.balance ?? 0;
+  const watchEarnTotal = watchEarn.total_earned ?? 0;
+  const totalReferrals = referrals.total_referred ?? 0;
 
   const totalEarned =
     miningBalance + dailyTotal + boostBalance + watchEarnTotal;
 
-  /* ---------- Copy Referral Code ---------- */
+  /* ---------- Copy ---------- */
   const copyCode = async () => {
     if (!referralCode) return;
     await Clipboard.setStringAsync(referralCode);
@@ -174,7 +145,7 @@ function ProfileScreen() {
           <Text style={styles.mainValue}>{totalEarned.toFixed(4)} VAD</Text>
         </View>
 
-        {/* Stat Cards */}
+        {/* Stats */}
         <View style={styles.grid}>
           <StatCard title="Mining" value={miningBalance} icon="hardware-chip" />
           <StatCard title="Daily" value={dailyTotal} icon="calendar" />
@@ -196,12 +167,12 @@ function ProfileScreen() {
         {/* Referred By */}
         <Card label="Referred By" value={referredBy} />
 
-        {/* Referrals */}
+        {/* Referral Count */}
         <View style={styles.refCard}>
           <Ionicons name="people" size={28} color="#34D399" />
           <View>
             <Text style={styles.refTitle}>Your Referrals</Text>
-            <Text style={styles.refValue}>{referrals} Users</Text>
+            <Text style={styles.refValue}>{totalReferrals} Users</Text>
           </View>
         </View>
       </ScrollView>
@@ -209,7 +180,8 @@ function ProfileScreen() {
   );
 }
 
-/* ---------- Generic Info Card ---------- */
+/* ---------- Components ---------- */
+
 function Card({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.card}>
@@ -219,7 +191,6 @@ function Card({ label, value }: { label: string; value: string }) {
   );
 }
 
-/* ---------- Stat Card ---------- */
 function StatCard({
   title,
   value,

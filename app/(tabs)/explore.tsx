@@ -1,4 +1,3 @@
-// app/(tabs)/explore.tsx
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -13,13 +12,7 @@ import {
   Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-
-// ⭐ REPLACED STATIC FIREBASE IMPORTS WITH LAZY LOADERS
-async function getAuthSafe() {
-  const { getAuth } = await import("firebase/auth");
-  const { app } = await import("../../firebase/firebaseConfig");
-  return getAuth(app);
-}
+import { supabase } from "../../supabase/client"; // 🔥 use your client
 
 const { width } = Dimensions.get("window");
 const CARD_W = Math.floor((width - 48) / 2);
@@ -64,33 +57,28 @@ const SAMPLE_MARKET_ITEMS = [
   },
 ];
 
-// DEFAULT EXPORT
 export default function Explore() {
   return <ExploreScreen />;
 }
 
 function ExploreScreen() {
-  // ⭐ We store the user AFTER lazy-loading Firebase Auth
   const [userLabel, setUserLabel] = useState("Guest");
 
   const fade = useRef(new Animated.Value(0)).current;
   const slideY = useRef(new Animated.Value(10)).current;
 
-  // ⭐ Load Firebase user lazily
+  // ⭐ LOAD USER FROM SUPABASE
   useEffect(() => {
     (async () => {
-      try {
-        const auth = await getAuthSafe();
-        const user = auth.currentUser;
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-        if (user) {
-          if (user.email) setUserLabel(user.email.split("@")[0]);
-          else setUserLabel(user.uid.slice(0, 6));
-        } else {
-          setUserLabel("Guest");
-        }
-      } catch (err) {
-        console.warn("Auth load failed:", err);
+      if (user) {
+        if (user.email) setUserLabel(user.email.split("@")[0]);
+        else setUserLabel(user.id.slice(0, 6));
+      } else {
+        setUserLabel("Guest");
       }
     })();
   }, []);

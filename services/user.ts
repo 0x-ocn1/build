@@ -7,24 +7,19 @@ import {
   BoostData,
   DailyClaimData,
   WatchEarnData,
-} from "../supabase/types"; // adjust path if your types live elsewhere
+} from "../supabase/types";
 
 /* -------------------------------------------------------------
-   Generate random referral code (same behavior)
+   Generate referral code
 ------------------------------------------------------------- */
 export const generateReferralCode = (uid: string) =>
   uid.slice(0, 6).toUpperCase();
 
 /* -------------------------------------------------------------
    CREATE USER AFTER REGISTER
-   - expects current supabase auth user exists
-   - creates one row per table (user_profiles, mining_data, referral_data, boost_data, daily_claim_data, watch_earn_data)
 ------------------------------------------------------------- */
 export async function createUserInFirestore(referredBy: string | null = null) {
-  const {
-    data: authUser,
-    error: authError,
-  } = await supabase.auth.getUser();
+  const { data: authUser, error: authError } = await supabase.auth.getUser();
 
   if (authError || !authUser?.user) {
     console.warn("No supabase auth user available.", authError);
@@ -39,7 +34,6 @@ export async function createUserInFirestore(referredBy: string | null = null) {
     avatar_url: null,
     referral_code: generateReferralCode(uid),
     referred_by: referredBy,
-    // created_at defaults to now() in your schema
   };
 
   const mining: Partial<MiningData> = {
@@ -47,7 +41,7 @@ export async function createUserInFirestore(referredBy: string | null = null) {
     mining_active: false,
     last_start: null,
     last_claim: null,
-    balance: 0, // double precision assumed
+    balance: 0,
   };
 
   const referrals: Partial<ReferralData> = {
@@ -76,7 +70,6 @@ export async function createUserInFirestore(referredBy: string | null = null) {
     total_earned: 0,
   };
 
-  // Insert rows. We do separate inserts because they're separate tables.
   const inserts = [
     supabase.from("user_profiles").insert(profile),
     supabase.from("mining_data").insert(mining),
@@ -88,10 +81,9 @@ export async function createUserInFirestore(referredBy: string | null = null) {
 
   const results = await Promise.all(inserts);
 
-  // Log any insertion errors
   for (const r of results) {
     // @ts-ignore
-    if (r.error) console.error("insert error:", r.error);
+    if (r.error) console.error("Insert error:", r.error);
   }
 
   return true;
@@ -99,10 +91,8 @@ export async function createUserInFirestore(referredBy: string | null = null) {
 
 /* -------------------------------------------------------------
    GET USER DATA
-   - returns an aggregated object similar to your firebase doc.data()
 ------------------------------------------------------------- */
 export async function getUserData(uid: string) {
-  // fetch each table row and merge
   const [
     profileRes,
     miningRes,
@@ -120,20 +110,17 @@ export async function getUserData(uid: string) {
   ]);
 
   if (profileRes.error && profileRes.error.code === "PGRST116") {
-    // not found
     return null;
   }
 
-  // Build the combined object in the same shape your UI expects
-  const result: any = {};
-  if (!profileRes.error) result.profile = profileRes.data;
-  if (!miningRes.error) result.mining = miningRes.data;
-  if (!referralsRes.error) result.referrals = referralsRes.data;
-  if (!boostRes.error) result.boost = boostRes.data;
-  if (!dailyRes.error) result.dailyClaim = dailyRes.data;
-  if (!watchRes.error) result.watchEarn = watchRes.data;
-
-  return result;
+  return {
+    profile: profileRes.data,
+    mining: miningRes.data,
+    referrals: referralsRes.data,
+    boost: boostRes.data,
+    dailyClaim: dailyRes.data,
+    watchEarn: watchRes.data,
+  };
 }
 
 /* -------------------------------------------------------------
@@ -150,11 +137,7 @@ export async function startMining(uid: string) {
     })
     .eq("user_id", uid);
 
-  if (error) {
-    console.error("startMining error", error);
-    throw error;
-  }
-
+  if (error) throw error;
   return data;
 }
 
@@ -164,26 +147,17 @@ export async function startMining(uid: string) {
 export async function stopMining(uid: string) {
   const { data, error } = await supabase
     .from("mining_data")
-    .update({
-      mining_active: false,
-    })
+    .update({ mining_active: false })
     .eq("user_id", uid);
 
-  if (error) {
-    console.error("stopMining error", error);
-    throw error;
-  }
-
+  if (error) throw error;
   return data;
 }
 
 /* -------------------------------------------------------------
    CLAIM MINING REWARD
-   - replicates the Firebase transaction logic as closely as possible
-   - reads the mining row, computes reward, then attempts a conditional update
 ------------------------------------------------------------- */
 export async function claimMiningReward(uid: string) {
-  // 1) fetch mining row
   const fetch = await supabase
     .from("mining_data")
     .select("*")
@@ -198,6 +172,7 @@ export async function claimMiningReward(uid: string) {
 
   const lastStart = new Date(mining.last_start);
   const now = new Date();
+
   const elapsedMs = now.getTime() - lastStart.getTime();
   const elapsedSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
 
@@ -208,7 +183,6 @@ export async function claimMiningReward(uid: string) {
   const rewardAmount = (capped / MAX_SECONDS) * DAILY_MAX;
   const normalizedReward = Number(rewardAmount);
 
-  // 2) conditional update: only apply if last_start hasn't changed
   const update = await supabase
     .from("mining_data")
     .update({
@@ -218,26 +192,24 @@ export async function claimMiningReward(uid: string) {
       mining_active: false,
     })
     .eq("user_id", uid)
-    .eq("last_start", mining.last_start); // only update if last_start still matches
+    .eq("last_start", mining.last_start);
 
-  if (update.error) {
-    console.error("claimMiningReward update error", update.error);
-    return 0;
-  }
+  if (update.error) return 0;
 
-  // if no rows updated, return 0 to indicate someone else claimed concurrently
-  if (!update.data || (Array.isArray(update.data) && update.data.length === 0))
-    return 0;
+  const rows = update.data as any[] | null;
+
+  if (!rows || rows.length === 0) return 0;
 
   return normalizedReward;
 }
 
 /* -------------------------------------------------------------
    REGISTER REFERRAL
-   - find user by referral_code, then update their referral_data row
 ------------------------------------------------------------- */
-export async function registerReferral(referrerCode: string, newUserUid: string) {
-  // find referrer user_id
+export async function registerReferral(
+  referrerCode: string,
+  newUserUid: string
+) {
   const ref = await supabase
     .from("user_profiles")
     .select("user_id")
@@ -246,9 +218,8 @@ export async function registerReferral(referrerCode: string, newUserUid: string)
 
   if (ref.error || !ref.data) return null;
 
-  const referrerUid = (ref.data as any).user_id;
+  const referrerUid = ref.data.user_id;
 
-  // fetch existing referral_data
   const rfetch = await supabase
     .from("referral_data")
     .select("*")
@@ -258,40 +229,30 @@ export async function registerReferral(referrerCode: string, newUserUid: string)
   if (rfetch.error || !rfetch.data) return null;
 
   const current = rfetch.data as any;
-  const newReferredUsers = [...(current.referred_users ?? []), newUserUid];
-  const newTotal = (current.total_referred ?? 0) + 1;
+  const newReferred = [...(current.referred_users ?? []), newUserUid];
 
   const upd = await supabase
     .from("referral_data")
     .update({
-      total_referred: newTotal,
-      referred_users: newReferredUsers,
+      total_referred: newReferred.length,
+      referred_users: newReferred,
     })
     .eq("user_id", referrerUid);
 
-  if (upd.error) {
-    console.error("registerReferral update error", upd.error);
-    return null;
-  }
-
+  if (upd.error) return null;
   return true;
 }
 
 /* -------------------------------------------------------------
-   BOOST REWARD (WATCH ADS)
-   - allows up to 3 boosts per 24h
+   BOOST REWARD
 ------------------------------------------------------------- */
 export async function claimBoostReward(uid: string) {
-  // fetch boost and mining
   const [bRes, mRes] = await Promise.all([
     supabase.from("boost_data").select("*").eq("user_id", uid).single(),
     supabase.from("mining_data").select("*").eq("user_id", uid).single(),
   ]);
 
-  if (bRes.error || mRes.error) {
-    console.error("claimBoostReward fetch error", bRes.error || mRes.error);
-    return 0;
-  }
+  if (bRes.error || mRes.error) return 0;
 
   const boost = bRes.data as any;
   const mining = mRes.data as any;
@@ -299,21 +260,14 @@ export async function claimBoostReward(uid: string) {
   const now = new Date();
   const lastReset = boost.last_reset ? new Date(boost.last_reset) : null;
 
-  // reset if needed
   if (!lastReset || now.getTime() - lastReset.getTime() >= 24 * 3600 * 1000) {
-    // reset used_today to 0 and set last_reset to now
-    const resetRes = await supabase
+    const reset = await supabase
       .from("boost_data")
-      .update({
-        used_today: 0,
-        last_reset: now.toISOString(),
-      })
+      .update({ used_today: 0, last_reset: now.toISOString() })
       .eq("user_id", uid);
 
-    if (resetRes.error) {
-      console.error("boost reset error", resetRes.error);
-      return 0;
-    }
+    if (reset.error) return 0;
+
     boost.used_today = 0;
     boost.last_reset = now.toISOString();
   }
@@ -322,114 +276,82 @@ export async function claimBoostReward(uid: string) {
 
   const REWARD = 0.5;
 
-  // update mining balance and boost counters
   const [updateMining, updateBoost] = await Promise.all([
     supabase
       .from("mining_data")
-      .update({
-        balance: (mining.balance ?? 0) + REWARD,
-      })
+      .update({ balance: (mining.balance ?? 0) + REWARD })
       .eq("user_id", uid),
     supabase
       .from("boost_data")
       .update({
-        used_today: (boost.used_today ?? 0) + 1,
+        used_today: boost.used_today + 1,
         last_reset: now.toISOString(),
         balance: (boost.balance ?? 0) + REWARD,
       })
       .eq("user_id", uid),
   ]);
 
-  if (updateMining.error || updateBoost.error) {
-    console.error("claimBoostReward update error", updateMining.error || updateBoost.error);
-    return 0;
-  }
+  if (updateMining.error || updateBoost.error) return 0;
 
   return REWARD;
 }
 
 /* -------------------------------------------------------------
-   DAILY CLAIM (STREAK)
+   DAILY CLAIM
 ------------------------------------------------------------- */
-// (only the DAILY CLAIM function is shown below — keep the rest of your file as-is)
-
-
 export async function claimDailyReward(uid: string) {
-const [dRes, mRes] = await Promise.all([
-supabase.from("daily_claim_data").select("*").eq("user_id", uid).single(),
-supabase.from("mining_data").select("*").eq("user_id", uid).single(),
-]);
+  const [dRes, mRes] = await Promise.all([
+    supabase.from("daily_claim_data").select("*").eq("user_id", uid).single(),
+    supabase.from("mining_data").select("*").eq("user_id", uid).single(),
+  ]);
 
+  if (dRes.error || mRes.error) return { reward: 0 };
 
-if (dRes.error || mRes.error) {
-console.error("claimDailyReward fetch error", dRes.error || mRes.error);
-return { reward: 0 };
+  const daily = dRes.data as any;
+  const mining = mRes.data as any;
+
+  const now = new Date();
+  const lastClaim = daily.last_claim ? new Date(daily.last_claim) : null;
+  const DAY = 24 * 3600 * 1000;
+
+  if (lastClaim && now.getTime() - lastClaim.getTime() < DAY)
+    return { reward: 0 };
+
+  if (lastClaim && now.getTime() - lastClaim.getTime() >= DAY * 2)
+    daily.streak = 0;
+
+  daily.streak = (daily.streak ?? 0) + 1;
+
+  let REWARD = 0.1 * daily.streak;
+  if (daily.streak === 7) REWARD = 2;
+
+  const [uMining, uDaily] = await Promise.all([
+    supabase
+      .from("mining_data")
+      .update({ balance: (mining.balance ?? 0) + REWARD })
+      .eq("user_id", uid),
+    supabase
+      .from("daily_claim_data")
+      .update({
+        last_claim: now.toISOString(),
+        streak: daily.streak,
+        total_earned: (daily.total_earned ?? 0) + REWARD,
+      })
+      .eq("user_id", uid),
+  ]);
+
+  if (uMining.error || uDaily.error) return { reward: 0 };
+
+  return {
+    reward: REWARD,
+    newStreak: daily.streak,
+    newLastClaim: now.toISOString(),
+    newBalance: (mining.balance ?? 0) + REWARD,
+  };
 }
-
-
-const daily = dRes.data as any;
-const mining = mRes.data as any;
-
-
-const now = new Date();
-const lastClaim = daily.last_claim ? new Date(daily.last_claim) : null;
-const DAY = 24 * 3600 * 1000;
-
-
-if (lastClaim && now.getTime() - lastClaim.getTime() < DAY) {
-return { reward: 0 };
-}
-
-
-// if missed a day, reset streak
-if (lastClaim && now.getTime() - lastClaim.getTime() >= DAY * 2) {
-daily.streak = 0;
-}
-
-
-daily.streak = (daily.streak ?? 0) + 1;
-
-
-let REWARD = 0.1 * daily.streak;
-if (daily.streak === 7) REWARD = 2;
-
-
-// update mining and daily_claim_data
-const [uMining, uDaily] = await Promise.all([
-supabase
-.from("mining_data")
-.update({
-balance: (mining.balance ?? 0) + REWARD,
-})
-.eq("user_id", uid),
-supabase
-.from("daily_claim_data")
-.update({
-last_claim: now.toISOString(),
-streak: daily.streak,
-total_earned: (daily.total_earned ?? 0) + REWARD,
-})
-.eq("user_id", uid),
-]);
-
-
-if (uMining.error || uDaily.error) {
-console.error("claimDailyReward update error", uMining.error || uDaily.error);
-return { reward: 0 };
-}
-
-
-return {
-reward: REWARD,
-newStreak: daily.streak,
-newLastClaim: now.toISOString(),
-newBalance: (mining.balance ?? 0) + REWARD,
-};
-}
-
 
 /* -------------------------------------------------------------
-   WATCH & EARN (REWARDED ADS)
+   WATCH & EARN
 ------------------------------------------------------------- */
 export async function claimWatchEarnReward(uid: string) {
   const [wRes, mRes] = await Promise.all([
@@ -437,10 +359,7 @@ export async function claimWatchEarnReward(uid: string) {
     supabase.from("mining_data").select("*").eq("user_id", uid).single(),
   ]);
 
-  if (wRes.error || mRes.error) {
-    console.error("claimWatchEarnReward fetch error", wRes.error || mRes.error);
-    return 0;
-  }
+  if (wRes.error || mRes.error) return 0;
 
   const watch = wRes.data as any;
   const mining = mRes.data as any;
@@ -450,9 +369,7 @@ export async function claimWatchEarnReward(uid: string) {
   const [uMining, uWatch] = await Promise.all([
     supabase
       .from("mining_data")
-      .update({
-        balance: (mining.balance ?? 0) + REWARD,
-      })
+      .update({ balance: (mining.balance ?? 0) + REWARD })
       .eq("user_id", uid),
     supabase
       .from("watch_earn_data")
@@ -463,10 +380,7 @@ export async function claimWatchEarnReward(uid: string) {
       .eq("user_id", uid),
   ]);
 
-  if (uMining.error || uWatch.error) {
-    console.error("claimWatchEarnReward update error", uMining.error || uWatch.error);
-    return 0;
-  }
+  if (uMining.error || uWatch.error) return 0;
 
   return REWARD;
 }

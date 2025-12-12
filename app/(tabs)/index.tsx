@@ -19,18 +19,13 @@ import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { useMining } from "../../hooks/useMining";
 
-import { getDatabase, ref as dbRef, onValue } from "firebase/database";
-
 import DailyClaim from "../../components/DailyClaim";
 import Boost from "../../components/Boost";
 import WatchEarn from "../../components/WatchEarn";
 import AdBanner from "../../components/AdBanner";
 
-/* ============================================================
-   Use native-safe firebase exports (no dynamic import)
-   - firebase/firebaseConfig must export `app` and `getAuthInstance`
-   ============================================================ */
-import { app, getAuthInstance } from "../../firebase/firebaseConfig";
+// ✅ Supabase client
+import { supabase } from "../../supabase/client"; // <--- adjust path if needed
 
 /* ============================================================
    MAIN COMPONENT
@@ -247,11 +242,7 @@ export default function MiningDashboard() {
   interface MiningData {
     miningActive: boolean;
     balance: number;
-    lastStart?: number | { toMillis?: () => number };
-  }
-
-  interface UserProfile {
-    avatarUrl?: string;
+    lastStart?: number;
   }
 
   interface NewsItem {
@@ -279,116 +270,44 @@ export default function MiningDashboard() {
   const [isClaiming, setIsClaiming] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
 
-  // New: auth/app readiness guard
-  const [authReady, setAuthReady] = useState(false);
-
   const perSecond = miningActive ? DAILY_MAX / DAY_SECONDS : 0;
-
-  /* ============================================================
-      Ensure auth/app is initialized (native-safe)
-      - we attempt initialization on mount
-      - if initialization fails we retry a couple times before showing UI
-  =============================================================== */
-  useEffect(() => {
-    let mounted = true;
-    let attempts = 0;
-    const maxAttempts = 4;
-    const tryInit = () => {
-      attempts += 1;
-      try {
-        // getAuthInstance initializes auth (native initializeAuth)
-        // This is synchronous in your firebaseConfig implementation
-        getAuthInstance();
-        if (mounted) setAuthReady(true);
-      } catch (e) {
-        console.warn("[AuthInit] attempt", attempts, "failed", e);
-        if (attempts < maxAttempts) {
-          // retry shortly (user-initiated components are allowed to wait)
-          setTimeout(tryInit, 250 * attempts);
-        } else {
-          if (mounted) setAuthReady(false);
-        }
-      }
-    };
-
-    tryInit();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   /* ============================================================
       Animated Balance
   =============================================================== */
   useEffect(() => {
-    try {
-      const val =
-        typeof getLiveBalance === "function"
-          ? getLiveBalance()
-          : balanceBase;
+    const value =
+      typeof getLiveBalance === "function" ? getLiveBalance() : balanceBase;
 
-      Animated.timing(animatedBalance, {
-        toValue: val,
-        duration: 600,
-        useNativeDriver: false,
-      }).start();
-    } catch (e) {
-      console.warn("[AnimatedBalance] error", e);
-    }
+    Animated.timing(animatedBalance, {
+      toValue: value,
+      duration: 600,
+      useNativeDriver: false,
+    }).start();
   }, [balanceBase, getLiveBalance]);
-
-  /* ============================================================
-      Normalized Mining Data & Session Calc
-  =============================================================== */
-  type NormalizedMiningData = {
-    balance?: number;
-    miningActive?: boolean;
-    lastStart?: number | { toMillis?: () => number };
-  };
-
-  const miningDataRef = useRef<NormalizedMiningData | null>(null);
-
-  useEffect(() => {
-    if (!miningData) return;
-
-    const normalized: NormalizedMiningData = {
-      ...miningData,
-      lastStart:
-        miningData.lastStart &&
-        typeof (miningData.lastStart as any)?.toMillis === "function"
-          ? { toMillis: () => (miningData.lastStart as any).toMillis() }
-          : miningData.lastStart ?? undefined,
-    };
-
-    miningDataRef.current = normalized;
-  }, [miningData]);
 
   /* ============================================================
       Session Interval
   =============================================================== */
+  const miningDataRef = useRef(miningData);
+
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
+    miningDataRef.current = miningData;
+  }, [miningData]);
 
-    const compute = () => {
+  useEffect(() => {
+    let interval: any;
+
+    const calc = () => {
       const md = miningDataRef.current;
-      const lastStart = md?.lastStart;
-
-      const startMs =
-        lastStart && typeof (lastStart as any).toMillis === "function"
-          ? (lastStart as any).toMillis()
-          : Number(lastStart) || 0;
+      const startMs = md?.lastStart ? Number(md.lastStart) : 0;
 
       if (md?.miningActive && startMs > 0) {
-        const elapsedSeconds = Math.max(
-          0,
-          Math.floor((Date.now() - startMs) / 1000)
-        );
-        const capped = Math.min(elapsedSeconds, DAY_SECONDS);
-        const sessionGain = capped * perSecond;
+        const elapsed = Math.floor((Date.now() - startMs) / 1000);
+        const capped = Math.min(elapsed, DAY_SECONDS);
 
         setSessionElapsed(capped);
-        setSessionBalance(sessionGain);
+        setSessionBalance(capped * perSecond);
         setTimeLeft(DAY_SECONDS - capped);
       } else {
         setSessionElapsed(0);
@@ -397,8 +316,8 @@ export default function MiningDashboard() {
       }
     };
 
-    compute();
-    interval = setInterval(compute, 1000);
+    calc();
+    interval = setInterval(calc, 1000);
     return () => clearInterval(interval);
   }, [perSecond]);
 
@@ -406,11 +325,11 @@ export default function MiningDashboard() {
       Spin Animation
   =============================================================== */
   const spinValue = useRef(new Animated.Value(0)).current;
-  const spinAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+  const spinAnim = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
-    if (!spinAnimRef.current) {
-      spinAnimRef.current = Animated.loop(
+    if (!spinAnim.current) {
+      spinAnim.current = Animated.loop(
         Animated.timing(spinValue, {
           toValue: 1,
           duration: 3500,
@@ -419,17 +338,15 @@ export default function MiningDashboard() {
       );
     }
 
-    if (miningActive) spinAnimRef.current.start();
+    if (miningActive) spinAnim.current.start();
     else {
-      try {
-        spinAnimRef.current.stop();
-      } catch {}
+      spinAnim.current.stop();
       spinValue.setValue(0);
     }
 
     return () => {
       try {
-        spinAnimRef.current?.stop();
+        spinAnim.current?.stop();
       } catch {}
     };
   }, [miningActive]);
@@ -440,26 +357,10 @@ export default function MiningDashboard() {
   });
 
   /* ============================================================
-      Start / Stop (use getAuthInstance - guard with authReady)
+      Start / Stop (Supabase Auth)
   =============================================================== */
   const handleStartStop = async () => {
-    if (!authReady) {
-      Alert.alert("Please wait", "Initializing app. Try again in a moment.");
-      return;
-    }
-
-    let auth;
-try {
-  auth = await getAuthInstance();
-} catch (e) {
-  console.warn("[handleStartStop] getAuthInstance failed", e);
-  Alert.alert("Error", "Auth not available.");
-  return;
-}
-
-const user = auth.currentUser;
-
-
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) return router.push("/(auth)/login");
 
     try {
@@ -477,26 +378,10 @@ const user = auth.currentUser;
   };
 
   /* ============================================================
-      Claim (use getAuthInstance - guard with authReady)
+      Claim Rewards (Supabase Auth)
   =============================================================== */
   const handleClaim = async () => {
-    if (!authReady) {
-      Alert.alert("Please wait", "Initializing app. Try again in a moment.");
-      return;
-    }
-
-   let auth;
-try {
-  auth = await getAuthInstance();
-} catch (e) {
-  console.warn("[handleClaim] getAuthInstance failed", e);
-  Alert.alert("Error", "Auth not available.");
-  return;
-}
-
-const user = auth.currentUser;
- 
-   
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) return router.push("/(auth)/login");
 
     try {
@@ -512,61 +397,44 @@ const user = auth.currentUser;
   };
 
   /* ============================================================
-      News Feed (only attach after app/auth is ready)
+      News Feed (Supabase Realtime)
   =============================================================== */
   useEffect(() => {
-    if (!authReady) return; // <<-- important: don't attach DB listener until ready
-
-    let unsub: any = null;
     let mounted = true;
 
-    (async () => {
-      try {
-        const db = getDatabase(app);
-        const newsRef = dbRef(db, "news");
+    const loadNews = async () => {
+      const { data, error } = await supabase
+        .from("news")
+        .select("*")
+        .order("timestamp", { ascending: false });
 
-        unsub = onValue(
-          newsRef,
-          (snap) => {
-            if (!mounted) return;
+      if (!mounted) return;
+      if (error) return setNews([]);
 
-            const value = snap.val();
-            if (!value) return setNews([]);
+      setNews(data || []);
+    };
 
-            try {
-              const arr: NewsItem[] = Object.keys(value)
-                .map((k) => ({
-                  id: k,
-                  ...(value[k] as Omit<NewsItem, "id">),
-                }))
-                .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+    loadNews();
 
-              setNews(arr);
-            } catch (e) {
-              console.warn("[NewsListener] error", e);
-              setNews([]);
-            }
-          },
-          () => mounted && setNews([])
-        );
-      } catch (e) {
-        console.warn("[NewsListener] setup failed", e);
-        setNews([]);
-      }
-    })();
+    const channel = supabase
+      .channel("news-updates")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "news" },
+        () => loadNews()
+      )
+      .subscribe();
 
     return () => {
       mounted = false;
-      try {
-        unsub && unsub();
-      } catch {}
+      supabase.removeChannel(channel);
     };
-  }, [authReady]);
+  }, []);
 
   /* ============================================================
       Loading UI
   =============================================================== */
-  if (isLoading || !authReady) {
+  if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#8B5CF6" />
@@ -579,24 +447,12 @@ const user = auth.currentUser;
   =============================================================== */
   const AnimatedBalance = () => {
     const [val, setVal] = useState(0);
-    const listenerIdRef = useRef<string | number | null>(null);
 
     useEffect(() => {
-      listenerIdRef.current = animatedBalance.addListener(({ value }) =>
+      const id = animatedBalance.addListener(({ value }) =>
         setVal(Number(value))
       );
-
-      return () => {
-        if (listenerIdRef.current !== null) {
-          try {
-            animatedBalance.removeListener(listenerIdRef.current as string);
-          } catch {
-            try {
-              (animatedBalance as any).removeAllListeners();
-            } catch {}
-          }
-        }
-      };
+      return () => animatedBalance.removeListener(id);
     }, []);
 
     return (
@@ -647,7 +503,7 @@ const user = auth.currentUser;
         </Pressable>
       </View>
 
-      {/* MAIN SCROLLABLE */}
+      {/* Main Scroll */}
       <ScrollView
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
@@ -723,7 +579,7 @@ const user = auth.currentUser;
             </Animated.View>
           </View>
 
-          {/* Progress */}
+          {/* Progress Bar */}
           <View style={styles.progressWrap}>
             <View style={styles.progressBg}>
               <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />

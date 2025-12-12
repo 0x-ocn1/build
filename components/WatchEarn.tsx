@@ -1,6 +1,9 @@
-// components/watchEarn.tsx
-
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 import {
   View,
   Text,
@@ -10,13 +13,30 @@ import {
   ActivityIndicator,
 } from "react-native";
 
-import { supabase } from "../supabase/client";
-import { showRewardedAd } from "./RewardedAd";
-import { claimWatchEarnReward } from "../services/user"; // <-- SUPABASE version
+import { supabase } from "../supabase/client"; // ✅ your Supabase client
 
-/* -------------------------------
-   COMPONENT
---------------------------------*/
+/* ------------------------------------------------------------------
+    🔥 IMPORT REWARDED AD + SUPABASE CLAIM FUNCTION (KEEP THESE)
+---------------------------------------------------------------------*/
+const lazyShowRewardedAd = async () =>
+  (await import("./RewardedAd")).showRewardedAd;
+
+/**  
+ *  ⛔ REPLACE THIS with YOUR Supabase claim logic  
+ *  Example: Supabase RPC (recommended)
+ */
+const claimWatchRewardSupabase = async (userId: string) => {
+  const { data, error } = await supabase.rpc("claim_watch_earn_reward", {
+    uid: userId,
+  });
+
+  if (error) throw error;
+  return data; // reward amount returned by RPC
+};
+
+/* ------------------------------------------------------------------
+     COMPONENT
+---------------------------------------------------------------------*/
 type Props = {
   visible?: boolean;
   onClose?: () => void;
@@ -32,25 +52,39 @@ export default function WatchEarn({ visible = false, onClose }: Props) {
     };
   }, []);
 
-  /* -------------------------------
-     AUTH STATE LISTENER (SUPABASE)
-  --------------------------------*/
+  /* ---------------------------------------------------------------
+     🔐 AUTH (NO FIREBASE)
+  ----------------------------------------------------------------*/
   const [uid, setUid] = useState<string | null>(null);
 
   useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted.current) return;
-      setUid(session?.user?.id ?? null);
-    });
+    let active = true;
 
-    return () => {
-      data.subscription.unsubscribe();
-    };
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (active) setUid(user?.id ?? null);
+
+      // subscribe to auth changes
+      const { data: listener } = supabase.auth.onAuthStateChange(
+        (_event, session) => {
+          if (!mounted.current) return;
+          setUid(session?.user?.id ?? null);
+        }
+      );
+
+      return () => {
+        active = false;
+        listener.subscription.unsubscribe();
+      };
+    })();
   }, []);
 
-  /* -------------------------------
+  /* ---------------------------------------------------------------
      STATE
-  --------------------------------*/
+  ----------------------------------------------------------------*/
   const [loading, setLoading] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [message, setMessage] = useState("");
@@ -60,71 +94,64 @@ export default function WatchEarn({ visible = false, onClose }: Props) {
     totalEarned: 0,
   });
 
-  /* -------------------------------
+  /* ---------------------------------------------------------------
      CLOSE IF LOGGED OUT
-  --------------------------------*/
+  ----------------------------------------------------------------*/
   useEffect(() => {
     if (visible && !uid) onClose?.();
   }, [visible, uid]);
 
-  /* -------------------------------
-     REALTIME SUPABASE LISTENER
-  --------------------------------*/
+  /* ---------------------------------------------------------------
+     SUPABASE REALTIME — USER WATCH EARN STATS
+     (Assumes table: `watch_earn` with row for each user)
+     Or you can change select() to match your schema
+  ----------------------------------------------------------------*/
   useEffect(() => {
     if (!uid) return;
 
-    // Load initial stats
+    let active = true;
+
     const loadStats = async () => {
-      const { data } = await supabase
-        .from("users")
-        .select("watchEarn")
+      const { data, error } = await supabase
+        .from("watch_earn") // ⚠️ change if your table name is different
+        .select("*")
         .eq("id", uid)
         .single();
 
-      if (!mounted.current || !data) return;
-
-      const w = data.watchEarn ?? {};
+      if (error || !active) return;
 
       setStats({
-        totalWatched: w.totalWatched ?? 0,
-        totalEarned: w.totalEarned ?? 0,
+        totalWatched: data.total_watched ?? 0,
+        totalEarned: data.total_earned ?? 0,
       });
     };
 
     loadStats();
 
-    // Listen for updates
+    // realtime sync
     const channel = supabase
-      .channel(`watchEarn-updates-${uid}`)
+      .channel(`watch_earn_${uid}`)
       .on(
         "postgres_changes",
         {
-          event: "UPDATE",
+          event: "*",
           schema: "public",
-          table: "users",
+          table: "watch_earn",
           filter: `id=eq.${uid}`,
         },
-        (payload) => {
-          if (!mounted.current) return;
-
-          const w = payload.new?.watchEarn ?? {};
-
-          setStats({
-            totalWatched: w.totalWatched ?? 0,
-            totalEarned: w.totalEarned ?? 0,
-          });
-        }
+        () => loadStats()
       )
       .subscribe();
 
     return () => {
+      active = false;
       supabase.removeChannel(channel);
     };
   }, [uid]);
 
-  /* -------------------------------
-     WATCH AD FLOW (SUPABASE)
-  --------------------------------*/
+  /* ---------------------------------------------------------------
+     WATCH AD FLOW
+  ----------------------------------------------------------------*/
   const handleWatch = useCallback(async () => {
     if (!uid || loading) return;
 
@@ -133,10 +160,14 @@ export default function WatchEarn({ visible = false, onClose }: Props) {
       setCompleted(false);
       setMessage("");
 
-      await showRewardedAd(); // SAME as firebase behavior
+      const showRewardedAd = await lazyShowRewardedAd();
+      await showRewardedAd();
+
       if (!mounted.current) return;
 
-      const reward = await claimWatchEarnReward(uid);
+      // 🎁 CLAIM FROM SUPABASE NOW
+      const reward = await claimWatchRewardSupabase(uid);
+
       if (!mounted.current) return;
 
       setCompleted(true);
@@ -154,10 +185,9 @@ export default function WatchEarn({ visible = false, onClose }: Props) {
     if (!loading) onClose?.();
   }, [loading, onClose]);
 
-
-  /* -------------------------------
+  /* ---------------------------------------------------------------
      UI
-  --------------------------------*/
+  ----------------------------------------------------------------*/
   if (!visible) return null;
 
   const { totalWatched, totalEarned } = stats;
@@ -226,9 +256,9 @@ export default function WatchEarn({ visible = false, onClose }: Props) {
   );
 }
 
-/* -------------------------------
-   STYLES
---------------------------------*/
+/* ------------------------------------------------------------------
+  STYLES
+---------------------------------------------------------------------*/
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,

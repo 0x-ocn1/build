@@ -10,11 +10,7 @@ import {
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { View, ActivityIndicator } from "react-native";
 import { useEffect, useState } from "react";
-
-type FirebaseUser = {
-  uid: string;
-  email?: string | null;
-};
+import { supabase } from "../supabase/client";
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -24,65 +20,70 @@ export default function RootLayout() {
   const [profileCompleted, setProfileCompleted] = useState(false);
 
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
     let cancelled = false;
 
-    (async () => {
+    const checkUserProfile = async (userId: string) => {
       try {
-        // Lazy-load Firebase config
-        const { getAuthInstance, getDb } = await import("../firebase/firebaseConfig");
-        const auth = await getAuthInstance();
+        // 🔥 Fetch from your correct table: user_profile
+        const { data, error } = await supabase
+          .from("user_profile")
+          .select("username")
+          .eq("id", userId)
+          .single();
 
-        unsubscribe = auth.onAuthStateChanged(async (user: FirebaseUser | null) => {
-          if (cancelled) return;
+        if (cancelled) return;
 
-          if (user) {
-            setIsAuthenticated(true);
+        if (error) {
+          console.log("[Supabase] Profile fetch error:", error);
+          setProfileCompleted(false);
+        } else {
+          setProfileCompleted(!!data?.username);
+        }
+      } catch (err) {
+        console.log("[Supabase] Profile error:", err);
+        setProfileCompleted(false);
+      }
+    };
 
-            try {
-              const db = await getDb();
-              const { doc, getDoc } = await import("firebase/firestore");
+    // 🔥 Supabase auth listener
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (cancelled) return;
 
-              const userRef = doc(db, "users", user.uid);
-              const userDoc = await getDoc(userRef);
+        const user = session?.user ?? null;
 
-              setProfileCompleted(
-                userDoc.exists() && !!userDoc.data()?.username
-              );
-            } catch (err) {
-              console.warn("[Auth] Failed to load user profile", err);
-              setProfileCompleted(false);
-            }
-          } else {
-            setIsAuthenticated(false);
-            setProfileCompleted(false);
-          }
+        if (user) {
+          setIsAuthenticated(true);
 
-          setLoading(false);
-        });
-      } catch (error) {
-        console.warn("[Auth] Initialization failed", error);
+          // Check user_profile table
+          await checkUserProfile(user.id);
+        } else {
+          setIsAuthenticated(false);
+          setProfileCompleted(false);
+        }
+
         setLoading(false);
       }
-    })();
+    );
 
     return () => {
       cancelled = true;
-      if (unsubscribe) unsubscribe();
+      listener.subscription.unsubscribe();
     };
   }, []);
 
-  // Loading screen
+  // Loading UI
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <View
+        style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+      >
         <ActivityIndicator size="large" />
         <StatusBar style="auto" />
       </View>
     );
   }
 
-  // Navigation logic
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
@@ -93,7 +94,6 @@ export default function RootLayout() {
         {!isAuthenticated && <Stack.Screen name="(auth)" />}
         <Stack.Screen name="modal" options={{ presentation: "modal" }} />
       </Stack>
-
       <StatusBar style="auto" />
     </ThemeProvider>
   );
