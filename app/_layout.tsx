@@ -1,5 +1,3 @@
-// app/_layout.tsx
-
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
@@ -24,11 +22,11 @@ export default function RootLayout() {
 
     const checkUserProfile = async (userId: string) => {
       try {
-        // 🔥 Fetch from your correct table: user_profile
+        // ✔ Correct table + correct PK
         const { data, error } = await supabase
-          .from("user_profile")
+          .from("user_profiles")
           .select("username")
-          .eq("id", userId)
+          .eq("user_id", userId)
           .single();
 
         if (cancelled) return;
@@ -37,25 +35,23 @@ export default function RootLayout() {
           console.log("[Supabase] Profile fetch error:", error);
           setProfileCompleted(false);
         } else {
-          setProfileCompleted(!!data?.username);
+          setProfileCompleted(Boolean(data?.username));
         }
       } catch (err) {
-        console.log("[Supabase] Profile error:", err);
-        setProfileCompleted(false);
+        console.log("[Supabase] Profile exception:", err);
+        if (!cancelled) setProfileCompleted(false);
       }
     };
 
-    // 🔥 Supabase auth listener
+    // ✔ Auth listener
     const { data: listener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (_, session) => {
         if (cancelled) return;
 
         const user = session?.user ?? null;
 
         if (user) {
           setIsAuthenticated(true);
-
-          // Check user_profile table
           await checkUserProfile(user.id);
         } else {
           setIsAuthenticated(false);
@@ -72,12 +68,10 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Loading UI
+  // ✔ Loading spinner
   if (loading) {
     return (
-      <View
-        style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-      >
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator size="large" />
         <StatusBar style="auto" />
       </View>
@@ -87,13 +81,25 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
-        {isAuthenticated && profileCompleted && <Stack.Screen name="(tabs)" />}
+        
+        {/* ✔ Logged in, profile done → tabs */}
+        {isAuthenticated && profileCompleted && (
+          <Stack.Screen name="(tabs)" />
+        )}
+
+        {/* ✔ Logged in, no profile → go setup */}
         {isAuthenticated && !profileCompleted && (
           <Stack.Screen name="(auth)/profileSetup" />
         )}
-        {!isAuthenticated && <Stack.Screen name="(auth)" />}
+
+        {/* ✔ Not logged in → show auth entry screen */}
+        {!isAuthenticated && (
+          <Stack.Screen name="(auth)/index" />
+        )}
+
         <Stack.Screen name="modal" options={{ presentation: "modal" }} />
       </Stack>
+
       <StatusBar style="auto" />
     </ThemeProvider>
   );
