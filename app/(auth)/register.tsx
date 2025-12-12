@@ -59,60 +59,56 @@ function RegisterScreen() {
     setTimeout(() => setShake(false), 150);
   };
 
-  const handleRegister = async () => {
-    if (loading) return;
+ const handleRegister = async () => {
+  if (loading) return;
 
-    if (!email.trim() || !password || !confirm) {
-      return triggerError("All fields are required");
+  if (!email.trim() || !password || !confirm) {
+    return triggerError("All fields are required");
+  }
+
+  if (password !== confirm) return triggerError("Passwords do not match");
+  if (password.length < 6)
+    return triggerError("Password must be at least 6 characters");
+
+  setLoading(true);
+  setErrorMsg("");
+
+  try {
+    // 1️⃣ Create user in Supabase Auth
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+    });
+
+    if (error) {
+      throw new Error(error.message || "Registration failed");
     }
 
-    if (password !== confirm) return triggerError("Passwords do not match");
-    if (password.length < 6)
-      return triggerError("Password must be at least 6 characters");
+    const user = data.user;
+    if (!user) throw new Error("User was not created.");
+    const uid = user.id;
 
-    setLoading(true);
-    setErrorMsg("");
+    // 2️⃣ Create a user_profiles row immediately
+    const { error: insertError } = await supabase.from("user_profiles").insert({
+      user_id: uid,
+      username: "", // Empty for now; user will fill it in profileSetup
+      referral_code: Math.random().toString(36).substring(2, 8).toUpperCase(), // Example referral code
+      created_at: new Date().toISOString(),
+    });
 
-    try {
-      // Create user in Supabase Auth
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-      });
-
-      if (error) {
-        throw new Error(error.message || "Registration failed");
-      }
-
-      const user = data.user;
-      if (!user) throw new Error("User was not created.");
-
-      const uid = user.id;
-
-      // Check if profile exists in user_profiles table
-      const { data: profile, error: profileErr } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("user_id", uid)
-        .maybeSingle();
-
-      if (profileErr) {
-        // Non-fatal: surface error and navigate to profile setup to let user continue
-        console.warn("profile lookup error:", profileErr);
-      }
-
-      // If there's no profile row, send user to profile setup (same behavior as before)
-      if (!profile) {
-        router.replace("/(auth)/profileSetup");
-      } else {
-        router.replace("/(tabs)");
-      }
-    } catch (err: any) {
-      triggerError(err?.message ?? "Registration failed");
+    if (insertError) {
+      console.warn("Error creating user profile:", insertError);
+      // Non-fatal: user can still continue to profileSetup
     }
 
-    setLoading(false);
-  };
+    // 3️⃣ Redirect to profile setup immediately
+    router.replace("/(auth)/profileSetup");
+  } catch (err: any) {
+    triggerError(err?.message ?? "Registration failed");
+  }
+
+  setLoading(false);
+};
 
 
   return (

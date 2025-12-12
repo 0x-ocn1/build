@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   Pressable,
 } from "react-native";
-import { Link, useRouter } from "expo-router";
+import { Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 // Supabase client
@@ -23,15 +23,12 @@ export default function Login() {
 
 /* ---------- Actual Screen ---------- */
 function LoginScreen() {
-  const router = useRouter();
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-
   const [shake, setShake] = useState(false);
 
   const triggerError = (msg: string) => {
@@ -52,45 +49,26 @@ function LoginScreen() {
     setErrorMsg("");
 
     try {
-      // Supabase sign in
-      const resp = await supabase.auth.signInWithPassword({
+      // Sign in with Supabase
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: password.trim(),
       });
 
-      if (resp.error) {
-        // Surface friendly messages
-        const msg = resp.error.message || "Login failed.";
-        throw new Error(msg);
+      if (error) {
+        throw new Error(error.message || "Login failed.");
       }
 
-      const user = resp.data.user;
-
-      if (!user) {
+      if (!data.user) {
         triggerError("Login failed. Try again.");
         setLoading(false);
         return;
       }
 
-      // Check profile in user_profiles table (same table name used in profileSetup)
-      const { data: profile, error: profileErr } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle();
+      // ✅ Do NOT navigate manually
+      // Let RootLayout handle routing based on session and profile
 
-      if (profileErr) {
-        // Non-fatal: log and proceed to profileSetup to be safe
-        console.warn("profile lookup error:", profileErr);
-      }
-
-      if (!profile) {
-        router.replace("/(auth)/profileSetup");
-      } else {
-        router.replace("/(tabs)");
-      }
     } catch (error: any) {
-      // Map a few common Supabase messages to nicer strings
       const message = (error?.message || "").toLowerCase();
 
       if (message.includes("invalid login credentials") || message.includes("invalid credentials")) {
@@ -182,6 +160,7 @@ function LoginScreen() {
     </View>
   );
 }
+
 
 /* ---------- STYLES ---------- */
 const styles = StyleSheet.create({
