@@ -1,5 +1,10 @@
 // app/components/Boost.tsx
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+} from "react";
 import {
   View,
   Text,
@@ -12,6 +17,36 @@ import {
 import { supabase } from "../supabase/client";
 import { useMining } from "../hooks/useMining";
 import { claimBoostReward } from "../services/user";
+
+/* ----------------------------------------------------
+   SAFE ADS SETUP
+---------------------------------------------------- */
+const IS_NATIVE =
+  Platform.OS === "android" || Platform.OS === "ios";
+
+let Ads: any = null;
+if (IS_NATIVE) {
+  try {
+    Ads = require("react-native-google-mobile-ads");
+  } catch {
+    Ads = null;
+  }
+}
+
+function useSafeInterstitialAd(adUnitId: string) {
+  if (!IS_NATIVE || !Ads?.useInterstitialAd) {
+    return {
+      isLoaded: false,
+      isClosed: false,
+      load: () => {},
+      show: () => {},
+    };
+  }
+
+  return Ads.useInterstitialAd(adUnitId, {
+    requestNonPersonalizedAdsOnly: true,
+  });
+}
 
 /* ----------------------------------------------------
    TYPES
@@ -37,45 +72,19 @@ async function getCurrentUser() {
   return data?.user ?? null;
 }
 
-async function parseLastResetToMs(value: any): Promise<number> {
+async function parseLastResetToMs(value: any) {
   if (!value) return 0;
   const t = new Date(value).getTime();
   return Number.isFinite(t) ? t : 0;
 }
 
 /* ----------------------------------------------------
-   SAFE ADS WRAPPER (NO CONDITIONAL HOOKS)
----------------------------------------------------- */
-const IS_NATIVE = Platform.OS === "android" || Platform.OS === "ios";
-
-let Ads: any = null;
-try {
-  Ads = require("react-native-google-mobile-ads");
-} catch {
-  Ads = null;
-}
-
-function useSafeInterstitialAd(adUnitId: string) {
-  // 🚫 Expo Go / Web → NO native module
-  if (!IS_NATIVE || !Ads?.useInterstitialAd) {
-    return {
-      isLoaded: false,
-      isClosed: false,
-      load: () => {},
-      show: () => {},
-    };
-  }
-
-  // ✅ Hook is ALWAYS called in native environments
-  return Ads.useInterstitialAd(adUnitId, {
-    requestNonPersonalizedAdsOnly: true,
-  });
-}
-
-/* ----------------------------------------------------
    COMPONENT
 ---------------------------------------------------- */
-export default function Boost({ visible, onClose }: BoostProps) {
+export default function Boost({
+  visible,
+  onClose,
+}: BoostProps) {
   const { boost } = useMining();
 
   const boostSafe = useMemo(() => {
@@ -104,7 +113,7 @@ export default function Boost({ visible, onClose }: BoostProps) {
   }, [loading]);
 
   /* ----------------------------------------------------
-     AD SETUP (SAFE)
+     INTERSTITIAL AD
   ---------------------------------------------------- */
   const adUnitId =
     __DEV__ && Ads?.TestIds
@@ -135,7 +144,7 @@ export default function Boost({ visible, onClose }: BoostProps) {
      COOLDOWN TIMER
   ---------------------------------------------------- */
   useEffect(() => {
-    let iv: ReturnType<typeof setInterval> | null = null;
+    let iv: any = null;
 
     (async () => {
       const lastMs = await parseLastResetToMs(
@@ -146,20 +155,16 @@ export default function Boost({ visible, onClose }: BoostProps) {
 
       const update = () => {
         if (!mountedRef.current) return;
-        const remain = Math.max(
-          0,
-          DAY - (Date.now() - lastMs)
+        setCooldownMs(
+          Math.max(0, DAY - (Date.now() - lastMs))
         );
-        setCooldownMs(remain);
       };
 
       update();
       iv = setInterval(update, 30000);
     })();
 
-    return () => {
-      if (iv) clearInterval(iv);
-    };
+    return () => iv && clearInterval(iv);
   }, [boostSafe?.lastReset]);
 
   /* ----------------------------------------------------
@@ -182,7 +187,9 @@ export default function Boost({ visible, onClose }: BoostProps) {
         const user = await getCurrentUser();
         if (!user || !mountedRef.current) return;
 
-        const reward = await claimBoostReward(user.id);
+        const reward = await claimBoostReward(
+          user.id
+        );
 
         if (!mountedRef.current) return;
 
@@ -191,8 +198,7 @@ export default function Boost({ visible, onClose }: BoostProps) {
             ? "Boost limit reached."
             : `+${reward.toFixed(1)} VAD added!`
         );
-      } catch (err) {
-        console.error("Boost reward error:", err);
+      } catch {
         if (mountedRef.current)
           setMessage("Boost failed.");
       } finally {
@@ -205,7 +211,7 @@ export default function Boost({ visible, onClose }: BoostProps) {
   }, [isClosed]);
 
   /* ----------------------------------------------------
-     HANDLE WATCH AD
+     WATCH AD HANDLER
   ---------------------------------------------------- */
   const usedToday = boostSafe?.usedToday ?? 0;
   const remaining = Math.max(0, 3 - usedToday);
@@ -259,7 +265,8 @@ export default function Boost({ visible, onClose }: BoostProps) {
       : `${remaining} boosts remaining today`;
   }, [remaining, cooldownMs]);
 
-  if (!visible) return null;
+  // ⛔ RETURN JSX CONTINUES (UNCHANGED)
+
 
 
 

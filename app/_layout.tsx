@@ -1,37 +1,49 @@
 // app/_layout.tsx
-import { Stack } from "expo-router";
+import { Slot, Redirect, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View, ActivityIndicator } from "react-native";
 import { useAuth } from "../hooks/useAuth";
 
 export default function RootLayout() {
   const { user, loading } = useAuth();
+  const segments = useSegments();
 
-  // Block app until auth state is known
+  // ⏳ Wait for auth state
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" />
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#060B1A",
+        }}
+      >
+        <ActivityIndicator size="large" color="#8B5CF6" />
       </View>
     );
   }
 
+  const group = segments[0]; // "(auth)" | "(onboarding)" | "(tabs)"
+
+  // 🔒 Protect dashboard
+  if (!user && group === "(tabs)") {
+    return <Redirect href="/(auth)/login" />;
+  }
+
+  // 🚫 Logged-in users must not see auth pages
+  if (user && group === "(auth)") {
+    return <Redirect href="/(tabs)" />;
+  }
+
+  // 🚫 Logged-in users must not see onboarding
+  if (user && group === "(onboarding)") {
+    return <Redirect href="/(tabs)" />;
+  }
+
   return (
     <>
-      <Stack screenOptions={{ headerShown: false }}>
-        {user ? (
-          // Logged in users
-          <Stack.Screen name="(tabs)" />
-        ) : (
-          // Logged out users
-          <Stack.Screen name="(auth)" />
-        )}
-
-        <Stack.Screen
-          name="modal"
-          options={{ presentation: "modal" }}
-        />
-      </Stack>
+      <Slot />
       <StatusBar style="auto" />
     </>
   );

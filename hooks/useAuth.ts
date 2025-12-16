@@ -13,17 +13,19 @@ export function useAuth() {
     // 1️⃣ Get initial session
     supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return;
+
       setSession(data.session);
       setUser(data.session?.user ?? null);
+      setLoading(false); // ✅ CRITICAL FIX
     });
 
     // 2️⃣ Listen for auth changes
     const { data: listener } =
       supabase.auth.onAuthStateChange((_event, session) => {
         if (!mounted) return;
+
         setSession(session);
         setUser(session?.user ?? null);
-        setLoading(false); // ✅ ONLY here
       });
 
     return () => {

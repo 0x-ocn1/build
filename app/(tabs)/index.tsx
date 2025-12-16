@@ -17,26 +17,17 @@ import { MotiText } from "moti";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { useMining } from "../../hooks/useMining";
 
+import { useMining } from "../../hooks/useMining";
 import DailyClaim from "../../components/DailyClaim";
 import Boost from "../../components/Boost";
 import WatchEarn from "../../components/WatchEarn";
 import AdBanner from "../../components/AdBanner";
-
-// ✅ Supabase client
-import { supabase } from "../../supabase/client"; // <--- adjust path if needed
+import { supabase } from "../../supabase/client";
 
 /* ============================================================
-   MAIN COMPONENT
+   TYPES
 =============================================================== */
-// ✅ Interfaces at TOP LEVEL (outside any function)
-interface MiningData {
-  miningActive: boolean;
-  balance: number;
-  lastStart?: number;
-}
-
 interface NewsItem {
   id: string;
   title: string;
@@ -45,10 +36,44 @@ interface NewsItem {
   timestamp?: number;
 }
 
-// ✅ Component AFTER interfaces
+/* ============================================================
+   CONSTANTS
+=============================================================== */
+const DAY_SECONDS = 24 * 3600;
+const DAILY_MAX = 4.8;
+const { width } = Dimensions.get("window");
+
+/* ============================================================
+   CHILD COMPONENTS
+=============================================================== */
+function AnimatedBalance({ animatedValue }: { animatedValue: Animated.Value }) {
+  const [val, setVal] = useState(0);
+
+  useEffect(() => {
+    const id = animatedValue.addListener(({ value }) => setVal(Number(value)));
+    return () => animatedValue.removeListener(id);
+  }, [animatedValue]);
+
+  return (
+    <MotiText
+      from={{ opacity: 0, translateY: 8 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      transition={{ duration: 360 }}
+      style={styles.balance}
+    >
+      {val.toFixed(4)} <Text style={styles.vadText}>VAD</Text>
+    </MotiText>
+  );
+}
+
+/* ============================================================
+   MAIN PAGE
+=============================================================== */
 export default function Page() {
+  /* ---------------- navigation ---------------- */
   const router = useRouter();
 
+  /* ---------------- external hooks ---------------- */
   const {
     miningData,
     userProfile,
@@ -59,210 +84,18 @@ export default function Page() {
     getLiveBalance,
   } = useMining();
 
- 
-
-  /* ---------- constants ---------- */
-  const { width } = Dimensions.get("window");
-  const DAY_SECONDS = 24 * 3600;
-  const DAILY_MAX = 4.8;
-
-  /* ---------- styles ---------- */
-  const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#060B1A" },
-    topNav: {
-      position: "absolute",
-      top: 12,
-      left: 16,
-      right: 16,
-      zIndex: 999,
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      pointerEvents: "box-none",
-    },
-    profileCircle: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      backgroundColor: "rgba(255,255,255,0.04)",
-      justifyContent: "center",
-      alignItems: "center",
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.06)",
-    },
-    avatar: { width: 48, height: 48, borderRadius: 24 },
-    chatCircle: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      backgroundColor: "rgba(255,255,255,0.04)",
-      justifyContent: "center",
-      alignItems: "center",
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.06)",
-    },
-    scroll: { paddingHorizontal: 22, paddingTop: 86 },
-    headerCard: {
-      borderRadius: 16,
-      paddingVertical: 12,
-      paddingHorizontal: 16,
-      marginBottom: 12,
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.12)",
-    },
-    headerTitle: { fontSize: 18, color: "#fff", fontWeight: "900" },
-    headerSub: { color: "#bfc7df", marginTop: 4, fontSize: 12 },
-    currentWrap: { marginBottom: 14 },
-    currentLabel: { color: "#9FA8C7", fontSize: 13, marginBottom: 6 },
-    balance: { color: "#fff", fontSize: 42, fontWeight: "900" },
-    vadText: { color: "#8B5CF6", fontSize: 18, fontWeight: "700" },
-    vadSmall: { color: "#8B5CF6", fontSize: 14, fontWeight: "700" },
-    buttonsRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      marginBottom: 14,
-    },
-    halfBtn: {
-      width: (width - 22 * 2 - 12) / 2,
-      borderRadius: 12,
-      paddingVertical: 14,
-      paddingHorizontal: 10,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    startBtn: {
-      backgroundColor: "rgba(255,255,255,0.03)",
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.04)",
-    },
-    miningActiveBtn: {
-      backgroundColor: "rgba(139,92,246,0.16)",
-      borderWidth: 1,
-      borderColor: "rgba(139,92,246,0.18)",
-    },
-    btnInner: { alignItems: "center" },
-    btnText: { color: "#fff", marginTop: 8, fontWeight: "700" },
-    smallTimer: { color: "#9FA8C7", marginTop: 6, fontSize: 12 },
-    claimBtn: { backgroundColor: "#fff" },
-    claimBtnText: { color: "#0F0A2A", fontWeight: "800", marginTop: 6 },
-    claimAmountText: { marginTop: 6, color: "#0F0A2A", fontWeight: "700" },
-    sessionCard: {
-      backgroundColor: "rgba(255,255,255,0.03)",
-      borderRadius: 14,
-      padding: 16,
-      marginBottom: 14,
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.04)",
-    },
-    sessionTop: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 12,
-    },
-    sessionLabel: { color: "#9FA8C7", fontSize: 12 },
-    sessionValue: { color: "#fff", fontSize: 28, fontWeight: "800" },
-    miningIcon: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
-      backgroundColor: "#8B5CF6",
-      justifyContent: "center",
-      alignItems: "center",
-    },
-    progressWrap: { marginTop: 6 },
-    progressBg: {
-      height: 10,
-      backgroundColor: "rgba(255,255,255,0.06)",
-      borderRadius: 12,
-      overflow: "hidden",
-    },
-    progressFill: { height: 10, backgroundColor: "#3B82F6" },
-    progressMeta: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      marginTop: 8,
-    },
-    progressText: { color: "#9FA8C7", fontSize: 12 },
-    infoBox: {
-      marginTop: 12,
-      backgroundColor: "rgba(255,255,255,0.02)",
-      borderRadius: 12,
-      padding: 12,
-    },
-    infoTitle: { color: "#fff", fontWeight: "800", marginBottom: 6 },
-    infoBody: { color: "#bfc7df", fontSize: 13 },
-    utilityRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      marginBottom: 18,
-    },
-    utilityItem: {
-      width: (width - 22 * 2 - 12) / 3,
-      backgroundColor: "rgba(255,255,255,0.02)",
-      borderRadius: 12,
-      padding: 10,
-      alignItems: "center",
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.03)",
-    },
-    newsSection: { marginBottom: 20 },
-    newsHeader: { color: "#fff", fontSize: 18, fontWeight: "800", marginBottom: 12 },
-    newsEmptyCard: {
-      backgroundColor: "rgba(255,255,255,0.02)",
-      borderRadius: 12,
-      padding: 18,
-      alignItems: "center",
-    },
-    newsEmptyText: { color: "#9FA8C7" },
-    newsCardItem: {
-      flexDirection: "row",
-      gap: 12,
-      backgroundColor: "rgba(255,255,255,0.02)",
-      padding: 12,
-      borderRadius: 12,
-      marginBottom: 12,
-      alignItems: "center",
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.03)",
-    },
-    newsImage: { width: 72, height: 72, borderRadius: 10 },
-    newsImagePlaceholder: {
-      width: 72,
-      height: 72,
-      borderRadius: 10,
-      backgroundColor: "rgba(139,92,246,0.06)",
-      justifyContent: "center",
-      alignItems: "center",
-    },
-    newsTextWrap: { flex: 1 },
-    newsTitleText: { color: "#fff", fontWeight: "800", fontSize: 15 },
-    newsBodyText: { color: "#bfc7df", marginTop: 4, fontSize: 13 },
-    newsTimeText: { color: "#9FA8C7", marginTop: 8, fontSize: 11 },
-    loadingContainer: {
-      flex: 1,
-      justifyContent: "center",
-      alignItems: "center",
-      backgroundColor: "#060B1A",
-    },
-    bannerCard: {
-      marginTop: 8,
-      backgroundColor: "#0f1113",
-      borderRadius: 12,
-      padding: 18,
-      alignItems: "center",
-      marginBottom: 16,
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.03)",
-    },
-  });
-
-
-  /* ---------- state ---------- */
-  const animatedBalance = useRef(new Animated.Value(0)).current;
+  /* ---------------- derived values ---------------- */
   const miningActive = miningData?.miningActive ?? false;
   const balanceBase = miningData?.balance ?? 0;
+  const perSecond = miningActive ? DAILY_MAX / DAY_SECONDS : 0;
 
+  /* ---------------- refs ---------------- */
+  const animatedBalance = useRef(new Animated.Value(0)).current;
+  const miningDataRef = useRef(miningData);
+  const spinValue = useRef(new Animated.Value(0)).current;
+  const spinAnim = useRef<Animated.CompositeAnimation | null>(null);
+
+  /* ---------------- state ---------------- */
   const [boostOpen, setBoostOpen] = useState(false);
   const [dailyOpen, setDailyOpen] = useState(false);
   const [watchOpen, setWatchOpen] = useState(false);
@@ -275,45 +108,46 @@ export default function Page() {
   const [isClaiming, setIsClaiming] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
 
-  const perSecond = miningActive ? DAILY_MAX / DAY_SECONDS : 0;
+  /* ---------------- memo ---------------- */
+  const progress = useMemo(
+    () => (miningActive ? Math.min(1, sessionElapsed / DAY_SECONDS) : 0),
+    [miningActive, sessionElapsed]
+  );
 
   /* ============================================================
-      Animated Balance
+      EFFECTS
   =============================================================== */
-  useEffect(() => {
-    const value =
-      typeof getLiveBalance === "function" ? getLiveBalance() : balanceBase;
-
-    Animated.timing(animatedBalance, {
-      toValue: value,
-      duration: 600,
-      useNativeDriver: false,
-    }).start();
-  }, [balanceBase, getLiveBalance]);
-
-  /* ============================================================
-      Session Interval
-  =============================================================== */
-  const miningDataRef = useRef(miningData);
 
   useEffect(() => {
     miningDataRef.current = miningData;
   }, [miningData]);
 
   useEffect(() => {
-    let interval: any;
+    const value = typeof getLiveBalance === "function"
+      ? getLiveBalance()
+      : balanceBase;
 
-    const calc = () => {
+    Animated.timing(animatedBalance, {
+      toValue: value,
+      duration: 600,
+      useNativeDriver: false,
+    }).start();
+  }, [balanceBase, getLiveBalance, animatedBalance]);
+
+  useEffect(() => {
+    const tick = () => {
       const md = miningDataRef.current;
       const startMs = md?.lastStart ? Number(md.lastStart) : 0;
 
       if (md?.miningActive && startMs > 0) {
-        const elapsed = Math.floor((Date.now() - startMs) / 1000);
-        const capped = Math.min(elapsed, DAY_SECONDS);
+        const elapsed = Math.min(
+          Math.floor((Date.now() - startMs) / 1000),
+          DAY_SECONDS
+        );
 
-        setSessionElapsed(capped);
-        setSessionBalance(capped * perSecond);
-        setTimeLeft(DAY_SECONDS - capped);
+        setSessionElapsed(elapsed);
+        setSessionBalance(elapsed * perSecond);
+        setTimeLeft(DAY_SECONDS - elapsed);
       } else {
         setSessionElapsed(0);
         setSessionBalance(0);
@@ -321,16 +155,10 @@ export default function Page() {
       }
     };
 
-    calc();
-    interval = setInterval(calc, 1000);
-    return () => clearInterval(interval);
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
   }, [perSecond]);
-
-  /* ============================================================
-      Spin Animation
-  =============================================================== */
-  const spinValue = useRef(new Animated.Value(0)).current;
-  const spinAnim = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
     if (!spinAnim.current) {
@@ -349,74 +177,19 @@ export default function Page() {
       spinValue.setValue(0);
     }
 
-    return () => {
-      try {
-        spinAnim.current?.stop();
-      } catch {}
-    };
-  }, [miningActive]);
+    return () => spinAnim.current?.stop();
+  }, [miningActive, spinValue]);
 
-  const spin = spinValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
-  });
-
-  /* ============================================================
-      Start / Stop (Supabase Auth)
-  =============================================================== */
-  const handleStartStop = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return router.push("/(auth)/login");
-
-    try {
-      if (!miningActive) {
-        setIsStarting(true);
-        await start();
-        setIsStarting(false);
-      } else {
-        await stop();
-      }
-    } catch {
-      setIsStarting(false);
-      Alert.alert("Error", "Couldn't toggle mining.");
-    }
-  };
-
-  /* ============================================================
-      Claim Rewards (Supabase Auth)
-  =============================================================== */
-  const handleClaim = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return router.push("/(auth)/login");
-
-    try {
-      setIsClaiming(true);
-      const reward = await claim();
-      setIsClaiming(false);
-
-      Alert.alert("Claimed", `${reward?.toFixed(4) ?? 0} VAD`);
-    } catch {
-      setIsClaiming(false);
-      Alert.alert("Error", "Claim failed.");
-    }
-  };
-
-  /* ============================================================
-      News Feed (Supabase Realtime)
-  =============================================================== */
   useEffect(() => {
     let mounted = true;
 
     const loadNews = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("news")
         .select("*")
         .order("timestamp", { ascending: false });
 
-      if (!mounted) return;
-      if (error) return setNews([]);
-
-      setNews(data || []);
+      if (mounted) setNews(data || []);
     };
 
     loadNews();
@@ -426,7 +199,7 @@ export default function Page() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "news" },
-        () => loadNews()
+        loadNews
       )
       .subscribe();
 
@@ -437,7 +210,51 @@ export default function Page() {
   }, []);
 
   /* ============================================================
-      Loading UI
+      ACTIONS
+  =============================================================== */
+
+  const requireAuth = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push("/(auth)/login");
+      return false;
+    }
+    return true;
+  };
+
+  const handleStartStop = async () => {
+    if (!(await requireAuth())) return;
+
+    try {
+      if (!miningActive) {
+        setIsStarting(true);
+        await start();
+      } else {
+        await stop();
+      }
+    } catch {
+      Alert.alert("Error", "Couldn't toggle mining.");
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const handleClaim = async () => {
+    if (!(await requireAuth())) return;
+
+    try {
+      setIsClaiming(true);
+      const reward = await claim();
+      Alert.alert("Claimed", `${reward?.toFixed(4) ?? 0} VAD`);
+    } catch {
+      Alert.alert("Error", "Claim failed.");
+    } finally {
+      setIsClaiming(false);
+    }
+  };
+
+  /* ============================================================
+      RENDER GUARD
   =============================================================== */
   if (isLoading) {
     return (
@@ -448,34 +265,13 @@ export default function Page() {
   }
 
   /* ============================================================
-      Animated Balance Component
+      UI
   =============================================================== */
-  const AnimatedBalance = () => {
-    const [val, setVal] = useState(0);
 
-    useEffect(() => {
-      const id = animatedBalance.addListener(({ value }) =>
-        setVal(Number(value))
-      );
-      return () => animatedBalance.removeListener(id);
-    }, []);
-
-    return (
-      <MotiText
-        from={{ opacity: 0, translateY: 8 }}
-        animate={{ opacity: 1, translateY: 0 }}
-        transition={{ duration: 360 }}
-        style={styles.balance}
-      >
-        {val.toFixed(4)} <Text style={styles.vadText}>VAD</Text>
-      </MotiText>
-    );
-  };
-
-  const progress = useMemo(
-    () => (miningActive ? Math.min(1, sessionElapsed / DAY_SECONDS) : 0),
-    [miningActive, sessionElapsed]
-  );
+  const spin = spinValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
 
   const formatTime = (secs: number) => {
     const h = Math.floor(secs / 3600);
@@ -484,9 +280,6 @@ export default function Page() {
     return `${h}h ${m}m ${s}s`;
   };
 
-  /* ============================================================
-      RENDER UI
-  =============================================================== */
   return (
     <View style={styles.container}>
       {/* Top Nav */}
@@ -508,25 +301,21 @@ export default function Page() {
         </Pressable>
       </View>
 
-      {/* Main Scroll */}
       <ScrollView
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 140 }}
       >
-        {/* Header */}
         <LinearGradient colors={["#22163a", "#0e0916"]} style={styles.headerCard}>
           <MotiText style={styles.headerTitle}>VAD Mining</MotiText>
           <Text style={styles.headerSub}>Earn up to {DAILY_MAX} VAD every 24 hours</Text>
         </LinearGradient>
 
-        {/* Balance */}
         <View style={styles.currentWrap}>
           <Text style={styles.currentLabel}>Current Balance</Text>
-          <AnimatedBalance />
+          <AnimatedBalance animatedValue={animatedBalance} />
         </View>
 
-        {/* Buttons */}
         <View style={styles.buttonsRow}>
           <Pressable
             onPress={handleStartStop}
@@ -569,7 +358,6 @@ export default function Page() {
           </Pressable>
         </View>
 
-        {/* Session Card */}
         <View style={styles.sessionCard}>
           <View style={styles.sessionTop}>
             <View>
@@ -584,7 +372,6 @@ export default function Page() {
             </Animated.View>
           </View>
 
-          {/* Progress Bar */}
           <View style={styles.progressWrap}>
             <View style={styles.progressBg}>
               <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
@@ -596,7 +383,6 @@ export default function Page() {
             </View>
           </View>
 
-          {/* Info */}
           <View style={styles.infoBox}>
             <Text style={styles.infoTitle}>About VAD mining</Text>
             <Text style={styles.infoBody}>
@@ -607,7 +393,6 @@ export default function Page() {
           </View>
         </View>
 
-        {/* Utilities */}
         <View style={styles.utilityRow}>
           <Pressable style={styles.utilityItem} onPress={() => setDailyOpen(true)}>
             <Text style={{ color: "#fff" }}>Daily Claim</Text>
@@ -620,7 +405,6 @@ export default function Page() {
           </Pressable>
         </View>
 
-        {/* News */}
         <View style={styles.newsSection}>
           <Text style={styles.newsHeader}>News & Updates</Text>
 
@@ -643,13 +427,11 @@ export default function Page() {
 
                 <View style={styles.newsTextWrap}>
                   <Text style={styles.newsTitleText}>{n.title}</Text>
-
                   {n.subtitle && (
                     <Text style={styles.newsBodyText} numberOfLines={2}>
                       {n.subtitle}
                     </Text>
                   )}
-
                   <Text style={styles.newsTimeText}>
                     {n.timestamp ? timeAgoFromUnix(Number(n.timestamp)) : ""}
                   </Text>
@@ -662,29 +444,16 @@ export default function Page() {
         <View style={{ height: Platform.OS === "ios" ? 160 : 140 }} />
       </ScrollView>
 
-      {/* Banner */}
-      <View
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          alignItems: "center",
-          zIndex: 50,
-        }}
-      >
+      <View style={styles.bannerWrap}>
         <View style={styles.bannerCard}>
           <AdBanner />
         </View>
       </View>
 
-      {/* Modals */}
       {dailyOpen && (
         <DailyClaim visible={dailyOpen} onClose={() => setDailyOpen(false)} />
       )}
-      {boostOpen && (
-        <Boost visible={boostOpen} onClose={() => setBoostOpen(false)} />
-      )}
+      {boostOpen && <Boost visible={boostOpen} onClose={() => setBoostOpen(false)} />}
       {watchOpen && (
         <WatchEarn visible={watchOpen} onClose={() => setWatchOpen(false)} />
       )}
@@ -705,3 +474,203 @@ function timeAgoFromUnix(ts: number) {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
 }
+
+/* ============================================================
+   STYLES (unchanged core values)
+=============================================================== */
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#060B1A" },
+  topNav: {
+    position: "absolute",
+    top: 12,
+    left: 16,
+    right: 16,
+    zIndex: 999,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  profileCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  avatar: { width: 48, height: 48, borderRadius: 24 },
+  chatCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  scroll: { paddingHorizontal: 22, paddingTop: 86 },
+  headerCard: {
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(139,92,246,0.12)",
+  },
+  headerTitle: { fontSize: 18, color: "#fff", fontWeight: "900" },
+  headerSub: { color: "#bfc7df", marginTop: 4, fontSize: 12 },
+  currentWrap: { marginBottom: 14 },
+  currentLabel: { color: "#9FA8C7", fontSize: 13, marginBottom: 6 },
+  balance: { color: "#fff", fontSize: 42, fontWeight: "900" },
+  vadText: { color: "#8B5CF6", fontSize: 18, fontWeight: "700" },
+  vadSmall: { color: "#8B5CF6", fontSize: 14, fontWeight: "700" },
+  buttonsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  halfBtn: {
+    width: (width - 22 * 2 - 12) / 2,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  startBtn: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.04)",
+  },
+  miningActiveBtn: {
+    backgroundColor: "rgba(139,92,246,0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(139,92,246,0.18)",
+  },
+  btnInner: { alignItems: "center" },
+  btnText: { color: "#fff", marginTop: 8, fontWeight: "700" },
+  smallTimer: { color: "#9FA8C7", marginTop: 6, fontSize: 12 },
+  claimBtn: { backgroundColor: "#fff" },
+  claimBtnText: { color: "#0F0A2A", fontWeight: "800", marginTop: 6 },
+  claimAmountText: { marginTop: 6, color: "#0F0A2A", fontWeight: "700" },
+  sessionCard: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.04)",
+  },
+  sessionTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  sessionLabel: { color: "#9FA8C7", fontSize: 12 },
+  sessionValue: { color: "#fff", fontSize: 28, fontWeight: "800" },
+  miningIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#8B5CF6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  progressWrap: { marginTop: 6 },
+  progressBg: {
+    height: 10,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  progressFill: { height: 10, backgroundColor: "#3B82F6" },
+  progressMeta: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  progressText: { color: "#9FA8C7", fontSize: 12 },
+  infoBox: {
+    marginTop: 12,
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderRadius: 12,
+    padding: 12,
+  },
+  infoTitle: { color: "#fff", fontWeight: "800", marginBottom: 6 },
+  infoBody: { color: "#bfc7df", fontSize: 13 },
+  utilityRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 18,
+  },
+  utilityItem: {
+    width: (width - 22 * 2 - 12) / 3,
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderRadius: 12,
+    padding: 10,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.03)",
+  },
+  newsSection: { marginBottom: 20 },
+  newsHeader: { color: "#fff", fontSize: 18, fontWeight: "800", marginBottom: 12 },
+  newsEmptyCard: {
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderRadius: 12,
+    padding: 18,
+    alignItems: "center",
+  },
+  newsEmptyText: { color: "#9FA8C7" },
+  newsCardItem: {
+    flexDirection: "row",
+    gap: 12,
+    backgroundColor: "rgba(255,255,255,0.02)",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.03)",
+  },
+  newsImage: { width: 72, height: 72, borderRadius: 10 },
+  newsImagePlaceholder: {
+    width: 72,
+    height: 72,
+    borderRadius: 10,
+    backgroundColor: "rgba(139,92,246,0.06)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  newsTextWrap: { flex: 1 },
+  newsTitleText: { color: "#fff", fontWeight: "800", fontSize: 15 },
+  newsBodyText: { color: "#bfc7df", marginTop: 4, fontSize: 13 },
+  newsTimeText: { color: "#9FA8C7", marginTop: 8, fontSize: 11 },
+  bannerWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    zIndex: 50,
+  },
+  bannerCard: {
+    marginTop: 8,
+    backgroundColor: "#0f1113",
+    borderRadius: 12,
+    padding: 18,
+    alignItems: "center",
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.03)",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#060B1A",
+  },
+});

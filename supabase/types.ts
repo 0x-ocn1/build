@@ -1,6 +1,6 @@
 export interface UserProfile {
   user_id: string;
-  username: string | null;
+  username: string; // NOT nullable
   avatar_url: string | null;
   referral_code: string;
   referred_by: string | null;

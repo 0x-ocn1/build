@@ -1,4 +1,3 @@
-// components/DailyClaim.tsx
 import {
   View,
   Text,
@@ -6,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { useEffect, useRef, useState, useMemo } from "react";
 
@@ -13,6 +13,39 @@ import { claimDailyReward } from "../services/user";
 import { useMining } from "../hooks/useMining";
 import { supabase } from "../supabase/client";
 
+/* -------------------------------------------------
+   SAFE ADS SETUP (NO ASYNC / NO CONDITIONAL HOOKS)
+-------------------------------------------------- */
+const IS_NATIVE =
+  Platform.OS === "android" || Platform.OS === "ios";
+
+let Ads: any = null;
+if (IS_NATIVE) {
+  try {
+    Ads = require("react-native-google-mobile-ads");
+  } catch {
+    Ads = null;
+  }
+}
+
+function useSafeInterstitialAd(adUnitId: string) {
+  if (!IS_NATIVE || !Ads?.useInterstitialAd) {
+    return {
+      isLoaded: false,
+      isClosed: false,
+      load: () => {},
+      show: () => {},
+    };
+  }
+
+  return Ads.useInterstitialAd(adUnitId, {
+    requestNonPersonalizedAdsOnly: true,
+  });
+}
+
+/* -------------------------------------------------
+   TYPES
+-------------------------------------------------- */
 type DailyClaimProps = {
   visible: boolean;
   onClose?: () => void;
@@ -28,18 +61,23 @@ function fmtTimeLeft(ms: number) {
   return `${h}h ${m}m`;
 }
 
-export default function DailyClaim({ visible, onClose }: DailyClaimProps) {
+export default function DailyClaim({
+  visible,
+  onClose,
+}: DailyClaimProps) {
   const { dailyClaim } = useMining();
 
   const [uid, setUid] = useState<string | null>(null);
 
   /* -------------------------------------------------
-     Supabase auth listener
+     AUTH LISTENER
   -------------------------------------------------- */
   useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
-      setUid(session?.user?.id ?? null);
-    });
+    const { data } = supabase.auth.onAuthStateChange(
+      (_, session) => {
+        setUid(session?.user?.id ?? null);
+      }
+    );
 
     return () => {
       data?.subscription?.unsubscribe();
@@ -47,14 +85,14 @@ export default function DailyClaim({ visible, onClose }: DailyClaimProps) {
   }, []);
 
   /* -------------------------------------------------
-     UI State
+     UI STATE
   -------------------------------------------------- */
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [cooldownMs, setCooldownMs] = useState(0);
 
   /* -------------------------------------------------
-     Prevent setState after unmount
+     MOUNT SAFETY
   -------------------------------------------------- */
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -65,132 +103,96 @@ export default function DailyClaim({ visible, onClose }: DailyClaimProps) {
   }, []);
 
   /* -------------------------------------------------
-     Auto-close if user logged out
+     AUTO CLOSE IF LOGGED OUT
   -------------------------------------------------- */
   useEffect(() => {
     if (!uid && visible) onClose?.();
   }, [uid, visible, onClose]);
 
   /* -------------------------------------------------
-     Interstitial Ad Setup
+     INTERSTITIAL AD (SAFE)
   -------------------------------------------------- */
   const adUnitId = __DEV__
     ? "ca-app-pub-3940256099942544/1033173712"
     : "ca-app-pub-4533962949749202/2761859275";
 
-  const [adState, setAdState] = useState({
-    isLoaded: false,
-    isClosed: false,
-    load: () => {},
-    show: () => {},
-  });
-
-  const loadInterstitialHook = async () => {
-    const mod = await import("react-native-google-mobile-ads");
-    return mod.useInterstitialAd;
-  };
+  const { isLoaded, isClosed, load, show } =
+    useSafeInterstitialAd(adUnitId);
 
   useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      const hook = await loadInterstitialHook();
-      const ads = hook(adUnitId, {
-        requestNonPersonalizedAdsOnly: true,
-      });
-
-      if (mounted) setAdState(ads);
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, [adUnitId]);
-
-  const { isLoaded, isClosed, load, show } = adState;
-
-  useEffect(() => {
-    if (visible && isLoaded === false) load?.();
+    if (visible && !isLoaded) load();
   }, [visible, isLoaded, load]);
 
   /* -------------------------------------------------
-   Cooldown Timer (final patched & TS-safe)
--------------------------------------------------- */
-useEffect(() => {
-  const raw = dailyClaim?.last_claim; // <-- FIXED snake_case
+     COOLDOWN TIMER
+  -------------------------------------------------- */
+  useEffect(() => {
+    const raw = dailyClaim?.last_claim;
 
-  if (!raw) {
-    setCooldownMs(0);
-    return;
-  }
-
-  let lastMs = 0;
-
-  try {
-    if (typeof raw === "number") {
-      lastMs = raw;
+    if (!raw) {
+      setCooldownMs(0);
+      return;
     }
-    // ISO date OR Date object OR string timestamp
-    else if (!isNaN(Date.parse(String(raw)))) {
-      lastMs = Date.parse(String(raw));
+
+    let lastMs = 0;
+
+    try {
+      if (typeof raw === "number") lastMs = raw;
+      else if (!isNaN(Date.parse(String(raw))))
+        lastMs = Date.parse(String(raw));
+      else lastMs = Number(raw) || 0;
+    } catch {
+      lastMs = 0;
     }
-    // Fallback
-    else {
-      lastMs = Number(raw) || 0;
-    }
-  } catch {
-    lastMs = 0;
-  }
 
-  const DAY = 24 * 3600 * 1000;
+    const DAY = 86400000;
 
-  const updateCooldown = () => {
-    if (!mountedRef.current) return;
-    const remain = Math.max(0, DAY - (Date.now() - lastMs));
-    setCooldownMs(remain);
-  };
+    const update = () => {
+      if (!mountedRef.current) return;
+      setCooldownMs(
+        Math.max(0, DAY - (Date.now() - lastMs))
+      );
+    };
 
-  updateCooldown(); // run immediately
-
-  const iv = setInterval(updateCooldown, 30_000);
-  return () => clearInterval(iv);
-}, [dailyClaim?.last_claim]);
+    update();
+    const iv = setInterval(update, 30000);
+    return () => clearInterval(iv);
+  }, [dailyClaim?.last_claim]);
 
   /* -------------------------------------------------
-     Reward AFTER ad closes
+     CLAIM REWARD AFTER AD CLOSE
   -------------------------------------------------- */
   const runReward = async () => {
     try {
       if (!uid || !mountedRef.current) return;
 
-      setLoading(true);
       const res = await claimDailyReward(uid);
-
       if (!mountedRef.current) return;
 
       const reward =
-        res && typeof res === "object" ? res.reward ?? 0 : Number(res || 0);
+        typeof res === "object"
+          ? res?.reward ?? 0
+          : Number(res || 0);
 
-      if (reward === 0) {
-        setMessage("Already claimed for today.");
-      } else {
-        setMessage(`+${reward.toFixed(1)} VAD added to your balance!`);
-      }
-    } catch (err) {
-      if (mountedRef.current) setMessage("Claim failed. Try again.");
+      setMessage(
+        reward === 0
+          ? "Already claimed for today."
+          : `+${reward.toFixed(1)} VAD added to your balance!`
+      );
+    } catch {
+      if (mountedRef.current)
+        setMessage("Claim failed. Try again.");
     } finally {
       if (mountedRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (isClosed && loading) {
-      runReward();
-    }
+    if (isClosed && loading) runReward();
   }, [isClosed, loading]);
 
   /* -------------------------------------------------
-     Claim Handler
+     CLAIM HANDLER
   -------------------------------------------------- */
   const handleClaim = () => {
     if (!uid) {
@@ -204,21 +206,26 @@ useEffect(() => {
     setLoading(true);
 
     if (!isLoaded) {
-      load?.();
+      load();
+      setLoading(false);
       return;
     }
 
-    show?.();
+    show();
   };
 
   const streak = dailyClaim?.streak ?? 0;
 
   const progressLabel = useMemo(
-    () => (cooldownMs > 0 ? fmtTimeLeft(cooldownMs) : "Available now"),
+    () =>
+      cooldownMs > 0
+        ? fmtTimeLeft(cooldownMs)
+        : "Available now",
     [cooldownMs]
   );
 
-  if (!visible) return null;
+  // ⛔ RETURN JSX CONTINUES (UNCHANGED)
+
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>

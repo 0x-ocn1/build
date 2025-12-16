@@ -102,7 +102,7 @@ function RegisterScreen() {
     }
 
     // 3️⃣ Redirect to profile setup immediately
-    router.replace("/(auth)/profileSetup");
+    router.replace("/(onboarding)/profileSetup");
   } catch (err: any) {
     triggerError(err?.message ?? "Registration failed");
   }
