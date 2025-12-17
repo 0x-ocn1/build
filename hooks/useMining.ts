@@ -1,6 +1,7 @@
 // hooks/useMining.ts
 // hooks/useMining.ts
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createUserInFirestore } from "../services/user";
 import { supabase } from "../supabase/client";
 import {
   startMining,
@@ -169,6 +170,8 @@ export function useMining() {
       }
 
       const uid = user.id;
+
+      
 
       try {
         const combined = await getUserData(uid);

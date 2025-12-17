@@ -12,12 +12,12 @@ export interface UserProfile {
 
 
 export interface MiningData {
-  user_id: string;
-   mining_active: boolean;
-  last_start: string | null;
-  last_claim: string | null;
-  balance: number; // server balance (base)
-};
+    user_id: string;
+       mining_active: boolean;
+         last_start: string | null;
+           last_claim: string | null;
+             balance: number; // server balance (base)
+}
 
 export interface ReferralData {
   user_id: string;

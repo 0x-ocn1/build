@@ -14,7 +14,7 @@ import { useMining } from "../hooks/useMining";
 import { supabase } from "../supabase/client";
 
 /* -------------------------------------------------
-   SAFE ADS SETUP (NO ASYNC / NO CONDITIONAL HOOKS)
+   SAFE ADS SETUP
 -------------------------------------------------- */
 const IS_NATIVE =
   Platform.OS === "android" || Platform.OS === "ios";
@@ -92,15 +92,19 @@ export default function DailyClaim({
   const [cooldownMs, setCooldownMs] = useState(0);
 
   /* -------------------------------------------------
-     MOUNT SAFETY
+     SAFETY REFS (MATCH BOOST)
   -------------------------------------------------- */
   const mountedRef = useRef(true);
+  const rewardPendingRef = useRef(false);
+  const loadingRef = useRef(false);
+
   useEffect(() => {
     mountedRef.current = true;
+    loadingRef.current = loading;
     return () => {
       mountedRef.current = false;
     };
-  }, []);
+  }, [loading]);
 
   /* -------------------------------------------------
      AUTO CLOSE IF LOGGED OUT
@@ -110,41 +114,31 @@ export default function DailyClaim({
   }, [uid, visible, onClose]);
 
   /* -------------------------------------------------
-     INTERSTITIAL AD (SAFE)
+     INTERSTITIAL AD
   -------------------------------------------------- */
-  const adUnitId = __DEV__
-    ? "ca-app-pub-3940256099942544/1033173712"
-    : "ca-app-pub-4533962949749202/2761859275";
+  const adUnitId =
+    __DEV__ && Ads?.TestIds
+      ? Ads.TestIds.INTERSTITIAL
+      : "ca-app-pub-4533962949749202/2761859275";
 
   const { isLoaded, isClosed, load, show } =
     useSafeInterstitialAd(adUnitId);
 
   useEffect(() => {
-    if (visible && !isLoaded) load();
-  }, [visible, isLoaded, load]);
+    if (visible) load();
+  }, [visible, load]);
 
   /* -------------------------------------------------
      COOLDOWN TIMER
   -------------------------------------------------- */
   useEffect(() => {
     const raw = dailyClaim?.last_claim;
-
     if (!raw) {
       setCooldownMs(0);
       return;
     }
 
-    let lastMs = 0;
-
-    try {
-      if (typeof raw === "number") lastMs = raw;
-      else if (!isNaN(Date.parse(String(raw))))
-        lastMs = Date.parse(String(raw));
-      else lastMs = Number(raw) || 0;
-    } catch {
-      lastMs = 0;
-    }
-
+    const lastMs = new Date(raw).getTime() || 0;
     const DAY = 86400000;
 
     const update = () => {
@@ -160,58 +154,77 @@ export default function DailyClaim({
   }, [dailyClaim?.last_claim]);
 
   /* -------------------------------------------------
-     CLAIM REWARD AFTER AD CLOSE
+     AD CLOSED → GIVE REWARD
   -------------------------------------------------- */
-  const runReward = async () => {
-    try {
-      if (!uid || !mountedRef.current) return;
-
-      const res = await claimDailyReward(uid);
-      if (!mountedRef.current) return;
-
-      const reward =
-        typeof res === "object"
-          ? res?.reward ?? 0
-          : Number(res || 0);
-
-      setMessage(
-        reward === 0
-          ? "Already claimed for today."
-          : `+${reward.toFixed(1)} VAD added to your balance!`
-      );
-    } catch {
-      if (mountedRef.current)
-        setMessage("Claim failed. Try again.");
-    } finally {
-      if (mountedRef.current) setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    if (isClosed && loading) runReward();
-  }, [isClosed, loading]);
+    if (!isClosed || !rewardPendingRef.current) return;
+
+    rewardPendingRef.current = false;
+
+    (async () => {
+      try {
+        if (!uid || !mountedRef.current) return;
+
+        const res = await claimDailyReward(uid);
+        if (!mountedRef.current) return;
+
+        const reward =
+          typeof res === "object"
+            ? res?.reward ?? 0
+            : Number(res || 0);
+
+        setMessage(
+          reward === 0
+            ? "Already claimed for today."
+            : `+${reward.toFixed(1)} VAD added to your balance!`
+        );
+      } catch {
+        if (mountedRef.current)
+          setMessage("Claim failed. Try again.");
+      } finally {
+        if (mountedRef.current) {
+          setLoading(false);
+          loadingRef.current = false;
+        }
+      }
+    })();
+  }, [isClosed, uid]);
 
   /* -------------------------------------------------
      CLAIM HANDLER
   -------------------------------------------------- */
-  const handleClaim = () => {
-    if (!uid) {
-      setMessage("Please log in to claim.");
-      return;
-    }
-
-    if (cooldownMs > 0 || loading) return;
+  const handleClaim = async () => {
+    if (loadingRef.current || cooldownMs > 0) return;
 
     setMessage("");
     setLoading(true);
+    loadingRef.current = true;
+    rewardPendingRef.current = true;
+
+    if (!uid) {
+      setMessage("Please log in to claim.");
+      setLoading(false);
+      loadingRef.current = false;
+      rewardPendingRef.current = false;
+      return;
+    }
 
     if (!isLoaded) {
       load();
       setLoading(false);
+      loadingRef.current = false;
+      rewardPendingRef.current = false;
       return;
     }
 
-    show();
+    try {
+      show();
+    } catch {
+      rewardPendingRef.current = false;
+      setMessage("Failed to show ad.");
+      setLoading(false);
+      loadingRef.current = false;
+    }
   };
 
   const streak = dailyClaim?.streak ?? 0;
@@ -224,8 +237,7 @@ export default function DailyClaim({
     [cooldownMs]
   );
 
-  // ⛔ RETURN JSX CONTINUES (UNCHANGED)
-
+  // ✅ JSX BELOW REMAINS 100% UNCHANGED
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>

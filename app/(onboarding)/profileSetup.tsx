@@ -71,72 +71,91 @@ function ProfileSetupScreen() {
      UPLOAD AVATAR
   ------------------------------------------------------------------ */
   const uploadAvatar = async (userId: string) => {
-    if (!avatar) return null;
+  if (!avatar) return null;
 
-    try {
-      const ext = avatar.split(".").pop();
-      const path = `avatars/${userId}.${ext}`;
+  try {
+    const ext = avatar.split(".").pop() || "jpg";
+    const filePath = `avatars/${userId}.${ext}`;
 
-      const img = await fetch(avatar);
-      const blob = await img.blob();
+    const formData = new FormData();
+    formData.append("file", {
+      uri: avatar,
+      name: `${userId}.${ext}`,
+      type: "image/jpeg",
+    } as any);
 
-      const { error } = await supabase.storage
-        .from("avatars")
-        .upload(path, blob, { upsert: true });
+    const { data, error } = await supabase.storage
+      .from("avatars") // ✅ BUCKET
+      .upload(filePath, formData, {
+        upsert: true,
+        contentType: "image/jpeg",
+      });
 
-      if (error) throw error;
+    if (error) throw error;
 
-      const { data } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(path);
+    const { data: urlData } = supabase.storage
+      .from("avatars")
+      .getPublicUrl(filePath);
 
-      return data.publicUrl;
-    } catch (error) {
-      console.warn("Avatar upload failed:", error);
-      return null;
-    }
-  };
+    return urlData.publicUrl;
+  } catch (e) {
+    console.warn("Avatar upload failed:", e);
+    return null;
+  }
+};
+
 
   /* ------------------------------------------------------------------
      SAVE PROFILE + COMPLETE ONBOARDING
   ------------------------------------------------------------------ */
   const saveProfile = async () => {
-    if (loading) return;
+  if (loading) return;
 
-    if (!username.trim()) {
-      Alert.alert("Error", "Username is required");
-      return;
+  if (!username.trim()) {
+    Alert.alert("Error", "Username is required");
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const { data, error: userError } = await supabase.auth.getUser();
+    if (userError || !data.user) {
+      throw new Error("User not authenticated");
     }
 
-    setLoading(true);
+    const user = data.user;
 
-    try {
-      const { data } = await supabase.auth.getUser();
-      const user = data.user;
-      if (!user) throw new Error("User not authenticated");
+    // ✅ Upload avatar ONLY if selected
+    let avatarUrl: string | null = null;
+    if (avatar) {
+      avatarUrl = await uploadAvatar(user.id);
+    }
 
-      const avatarUrl = await uploadAvatar(user.id);
+    const { error } = await supabase
+      .from("user_profiles")
+      .update({
+        username: username.trim(),
+        avatar_url: avatarUrl,
+        referred_by: referredBy.trim() || null,
+        has_completed_onboarding: true,
+      })
+      .eq("user_id", user.id);
 
-      const { error } = await supabase
-        .from("user_profiles")
-        .update({
-          username: username.trim(),
-          avatar_url: avatarUrl,
-          referred_by: referredBy.trim() || null,
-          has_completed_onboarding: true, // ✅ IMPORTANT
-        })
-        .eq("user_id", user.id);
+    if (error) throw error;
 
-      if (error) throw error;
+    // ✅ Navigate FIRST, then alert (prevents blocking)
+    router.replace("/(tabs)");
 
+    setTimeout(() => {
       Alert.alert("Success", "Profile completed!");
-      router.replace("/(tabs)");
-    } catch (err: any) {
-      Alert.alert("Error", err?.message ?? "Profile setup failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+    }, 300);
+  } catch (err: any) {
+    Alert.alert("Error", err?.message ?? "Profile setup failed");
+  } finally {
+    setLoading(false);
+  }
+};
 
   /* ------------------------------------------------------------------
      ANIMATIONS

@@ -28,7 +28,7 @@ export async function createUserInFirestore(referredBy: string | null = null) {
 
   const uid = authUser.user.id;
 
-  const profile: Partial<UserProfile> = {
+  const profile = {
     user_id: uid,
     username: "",
     avatar_url: null,
@@ -36,7 +36,7 @@ export async function createUserInFirestore(referredBy: string | null = null) {
     referred_by: referredBy,
   };
 
-  const mining: Partial<MiningData> = {
+  const mining = {
     user_id: uid,
     mining_active: false,
     last_start: null,
@@ -44,50 +44,54 @@ export async function createUserInFirestore(referredBy: string | null = null) {
     balance: 0,
   };
 
-  const referrals: Partial<ReferralData> = {
+  const referrals = {
     user_id: uid,
     total_referred: 0,
     referred_users: [],
   };
 
-  const boost: Partial<BoostData> = {
+  const boost = {
     user_id: uid,
     used_today: 0,
     last_reset: null,
     balance: 0,
   };
 
-  const dailyClaim: Partial<DailyClaimData> = {
+  const dailyClaim = {
     user_id: uid,
     last_claim: null,
     streak: 0,
     total_earned: 0,
   };
 
-  const watchEarn: Partial<WatchEarnData> = {
+  const watchEarn = {
     user_id: uid,
     total_watched: 0,
     total_earned: 0,
   };
 
-  const inserts = [
-    supabase.from("user_profiles").insert(profile),
-    supabase.from("mining_data").insert(mining),
-    supabase.from("referral_data").insert(referrals),
-    supabase.from("boost_data").insert(boost),
-    supabase.from("daily_claim_data").insert(dailyClaim),
-    supabase.from("watch_earn_data").insert(watchEarn),
+  const ops = [
+    supabase.from("user_profiles").upsert(profile, { onConflict: "user_id" }),
+    supabase.from("mining_data").upsert(mining, { onConflict: "user_id" }),
+    supabase.from("referral_data").upsert(referrals, { onConflict: "user_id" }),
+    supabase.from("boost_data").upsert(boost, { onConflict: "user_id" }),
+    supabase
+      .from("daily_claim_data")
+      .upsert(dailyClaim, { onConflict: "user_id" }),
+    supabase
+      .from("watch_earn_data")
+      .upsert(watchEarn, { onConflict: "user_id" }),
   ];
 
-  const results = await Promise.all(inserts);
+  const results = await Promise.all(ops);
 
   for (const r of results) {
-    // @ts-ignore
-    if (r.error) console.error("Insert error:", r.error);
+    if (r.error) console.error("Upsert error:", r.error);
   }
 
   return true;
 }
+
 
 /* -------------------------------------------------------------
    GET USER DATA
@@ -129,12 +133,17 @@ export async function getUserData(uid: string) {
 export async function startMining(uid: string) {
   const now = new Date().toISOString();
 
+  // 🔒 Ensure row exists (idempotent)
+  await supabase
+    .from("mining_data")
+    .upsert({ user_id: uid }, { onConflict: "user_id" });
+
   const { data, error } = await supabase
     .from("mining_data")
     .update({
       mining_active: true,
       last_start: now,
-      last_claim: now, // 👈 important
+      last_claim: now,
     })
     .eq("user_id", uid)
     .eq("mining_active", false)
@@ -142,7 +151,7 @@ export async function startMining(uid: string) {
 
   if (error) throw error;
   if (!data || data.length === 0)
-    throw new Error("Mining already active or record missing");
+    throw new Error("Mining already active");
 
   return data[0];
 }
