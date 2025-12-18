@@ -11,80 +11,89 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 
-import { supabase } from "../supabase/client"; // ✅ your Supabase client
+import { supabase } from "../supabase/client";
 
-/* ------------------------------------------------------------------
-    🔥 IMPORT REWARDED AD + SUPABASE CLAIM FUNCTION (KEEP THESE)
----------------------------------------------------------------------*/
-const lazyShowRewardedAd = async () =>
-  (await import("./RewardedAd")).showRewardedAd;
+/* -------------------------------------------------
+   SAFE REWARDED AD LOADER
+-------------------------------------------------- */
+const IS_NATIVE =
+  Platform.OS === "android" || Platform.OS === "ios";
 
-/**  
- *  ⛔ REPLACE THIS with YOUR Supabase claim logic  
- *  Example: Supabase RPC (recommended)
- */
+async function safeShowRewardedAd(): Promise<boolean> {
+  if (!IS_NATIVE) return false;
+
+  try {
+    const mod = await import("./RewardedAd");
+    if (!mod?.showRewardedAd) return false;
+
+    await mod.showRewardedAd();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/* -------------------------------------------------
+   SUPABASE CLAIM
+-------------------------------------------------- */
 const claimWatchRewardSupabase = async (userId: string) => {
-  const { data, error } = await supabase.rpc("claim_watch_earn_reward", {
-    uid: userId,
-  });
+  const { data, error } = await supabase.rpc(
+    "claim_watch_earn_reward",
+    { uid: userId }
+  );
 
   if (error) throw error;
-  return data; // reward amount returned by RPC
+  return data;
 };
 
-/* ------------------------------------------------------------------
-     COMPONENT
----------------------------------------------------------------------*/
 type Props = {
   visible?: boolean;
   onClose?: () => void;
 };
 
-export default function WatchEarn({ visible = false, onClose }: Props) {
-  const mounted = useRef(true);
+export default function WatchEarn({
+  visible = false,
+  onClose,
+}: Props) {
+  const mountedRef = useRef(true);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
-    mounted.current = true;
+    mountedRef.current = true;
     return () => {
-      mounted.current = false;
+      mountedRef.current = false;
     };
   }, []);
 
-  /* ---------------------------------------------------------------
-     🔐 AUTH (NO FIREBASE)
-  ----------------------------------------------------------------*/
+  /* -------------------------------------------------
+     AUTH
+  -------------------------------------------------- */
   const [uid, setUid] = useState<string | null>(null);
 
   useEffect(() => {
-    let active = true;
+    supabase.auth.getUser().then(({ data }) => {
+      if (!mountedRef.current) return;
+      setUid(data?.user?.id ?? null);
+    });
 
-    (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    const { data } = supabase.auth.onAuthStateChange(
+      (_, session) => {
+        if (!mountedRef.current) return;
+        setUid(session?.user?.id ?? null);
+      }
+    );
 
-      if (active) setUid(user?.id ?? null);
-
-      // subscribe to auth changes
-      const { data: listener } = supabase.auth.onAuthStateChange(
-        (_event, session) => {
-          if (!mounted.current) return;
-          setUid(session?.user?.id ?? null);
-        }
-      );
-
-      return () => {
-        active = false;
-        listener.subscription.unsubscribe();
-      };
-    })();
+    return () => {
+      data?.subscription?.unsubscribe();
+    };
   }, []);
 
-  /* ---------------------------------------------------------------
+  /* -------------------------------------------------
      STATE
-  ----------------------------------------------------------------*/
+  -------------------------------------------------- */
   const [loading, setLoading] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [message, setMessage] = useState("");
@@ -94,31 +103,29 @@ export default function WatchEarn({ visible = false, onClose }: Props) {
     totalEarned: 0,
   });
 
-  /* ---------------------------------------------------------------
+  /* -------------------------------------------------
      CLOSE IF LOGGED OUT
-  ----------------------------------------------------------------*/
+  -------------------------------------------------- */
   useEffect(() => {
     if (visible && !uid) onClose?.();
-  }, [visible, uid]);
+  }, [visible, uid, onClose]);
 
-  /* ---------------------------------------------------------------
-     SUPABASE REALTIME — USER WATCH EARN STATS
-     (Assumes table: `watch_earn` with row for each user)
-     Or you can change select() to match your schema
-  ----------------------------------------------------------------*/
+  /* -------------------------------------------------
+     LOAD STATS + REALTIME
+  -------------------------------------------------- */
   useEffect(() => {
     if (!uid) return;
 
     let active = true;
 
     const loadStats = async () => {
-      const { data, error } = await supabase
-        .from("watch_earn") // ⚠️ change if your table name is different
+      const { data } = await supabase
+        .from("watch_earn")
         .select("*")
         .eq("id", uid)
         .single();
 
-      if (error || !active) return;
+      if (!data || !active) return;
 
       setStats({
         totalWatched: data.total_watched ?? 0,
@@ -128,7 +135,6 @@ export default function WatchEarn({ visible = false, onClose }: Props) {
 
     loadStats();
 
-    // realtime sync
     const channel = supabase
       .channel(`watch_earn_${uid}`)
       .on(
@@ -139,7 +145,7 @@ export default function WatchEarn({ visible = false, onClose }: Props) {
           table: "watch_earn",
           filter: `id=eq.${uid}`,
         },
-        () => loadStats()
+        loadStats
       )
       .subscribe();
 
@@ -149,60 +155,65 @@ export default function WatchEarn({ visible = false, onClose }: Props) {
     };
   }, [uid]);
 
-  /* ---------------------------------------------------------------
-     WATCH AD FLOW
-  ----------------------------------------------------------------*/
+  /* -------------------------------------------------
+     WATCH HANDLER
+  -------------------------------------------------- */
   const handleWatch = useCallback(async () => {
-    if (!uid || loading) return;
+    if (!uid || loadingRef.current) return;
+
+    setLoading(true);
+    loadingRef.current = true;
+    setCompleted(false);
+    setMessage("");
+
+    const completedAd = await safeShowRewardedAd();
+
+    if (!completedAd) {
+      setMessage("Ad not completed.");
+      setLoading(false);
+      loadingRef.current = false;
+      return;
+    }
 
     try {
-      setLoading(true);
-      setCompleted(false);
-      setMessage("");
-
-      const showRewardedAd = await lazyShowRewardedAd();
-      await showRewardedAd();
-
-      if (!mounted.current) return;
-
-      // 🎁 CLAIM FROM SUPABASE NOW
       const reward = await claimWatchRewardSupabase(uid);
-
-      if (!mounted.current) return;
+      if (!mountedRef.current) return;
 
       setCompleted(true);
-      setMessage(`+${(reward ?? 0).toFixed(2)} VAD credited!`);
-    } catch (err) {
-      if (mounted.current) {
-        setMessage("Ad not completed or failed.");
-      }
+      setMessage(
+        `+${Number(reward || 0).toFixed(2)} VAD credited!`
+      );
+    } catch {
+      if (mountedRef.current)
+        setMessage("Reward failed.");
     } finally {
-      if (mounted.current) setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+        loadingRef.current = false;
+      }
     }
-  }, [uid, loading]);
+  }, [uid]);
 
-  const closeIfIdle = useCallback(() => {
-    if (!loading) onClose?.();
-  }, [loading, onClose]);
-
-  /* ---------------------------------------------------------------
-     UI
-  ----------------------------------------------------------------*/
   if (!visible) return null;
 
   const { totalWatched, totalEarned } = stats;
 
+  /* -------------------------------------------------
+     UI (UNCHANGED)
+  -------------------------------------------------- */
   return (
     <Modal
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={closeIfIdle}
+      onRequestClose={() => !loading && onClose?.()}
     >
       <View style={styles.overlay}>
         <View style={styles.card}>
           <Text style={styles.title}>🎥 Watch & Earn</Text>
-          <Text style={styles.sub}>Optional rewarded ads for instant VAD</Text>
+          <Text style={styles.sub}>
+            Optional rewarded ads for instant VAD
+          </Text>
 
           <View style={styles.rewardBox}>
             <Text style={styles.reward}>+0.25 VAD</Text>
@@ -211,12 +222,20 @@ export default function WatchEarn({ visible = false, onClose }: Props) {
 
           <View style={styles.statsRow}>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{totalWatched}</Text>
-              <Text style={styles.statLabel}>Ads Watched</Text>
+              <Text style={styles.statValue}>
+                {totalWatched}
+              </Text>
+              <Text style={styles.statLabel}>
+                Ads Watched
+              </Text>
             </View>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{totalEarned.toFixed(2)}</Text>
-              <Text style={styles.statLabel}>VAD Earned</Text>
+              <Text style={styles.statValue}>
+                {totalEarned.toFixed(2)}
+              </Text>
+              <Text style={styles.statLabel}>
+                VAD Earned
+              </Text>
             </View>
           </View>
 
@@ -224,29 +243,52 @@ export default function WatchEarn({ visible = false, onClose }: Props) {
             <Pressable
               onPress={handleWatch}
               disabled={loading}
-              style={[styles.watchBtn, loading && { opacity: 0.6 }]}
+              style={[
+                styles.watchBtn,
+                loading && { opacity: 0.6 },
+              ]}
             >
               {loading ? (
-                <View style={{ flexDirection: "row" }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                  }}
+                >
                   <ActivityIndicator />
-                  <Text style={[styles.watchText, { marginLeft: 10 }]}>
+                  <Text
+                    style={[
+                      styles.watchText,
+                      { marginLeft: 10 },
+                    ]}
+                  >
                     Loading ad...
                   </Text>
                 </View>
               ) : (
-                <Text style={styles.watchText}>Watch Ad</Text>
+                <Text style={styles.watchText}>
+                  Watch Ad
+                </Text>
               )}
             </Pressable>
           ) : (
-            <Pressable onPress={onClose} style={styles.doneBtn}>
+            <Pressable
+              onPress={onClose}
+              style={styles.doneBtn}
+            >
               <Text style={styles.doneText}>Done</Text>
             </Pressable>
           )}
 
-          {message ? <Text style={styles.message}>{message}</Text> : null}
+          {message ? (
+            <Text style={styles.message}>{message}</Text>
+          ) : null}
 
           {!loading && !completed && (
-            <Pressable onPress={onClose} style={styles.skipBtn}>
+            <Pressable
+              onPress={onClose}
+              style={styles.skipBtn}
+            >
               <Text style={styles.skipText}>Close</Text>
             </Pressable>
           )}
@@ -256,9 +298,9 @@ export default function WatchEarn({ visible = false, onClose }: Props) {
   );
 }
 
-/* ------------------------------------------------------------------
-  STYLES
----------------------------------------------------------------------*/
+/* -------------------------------------------------
+   STYLES
+-------------------------------------------------- */
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
