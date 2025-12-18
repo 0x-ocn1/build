@@ -51,6 +51,19 @@ function ProfileScreen() {
     })();
   }, []);
 
+
+  const handleLogout = async () => {
+  const { error } = await supabase.auth.signOut();
+
+  if (error) {
+    Alert.alert("Error", error.message);
+    return;
+  }
+
+  Alert.alert("Logged out", "You have been logged out successfully.");
+};
+
+
   /* ---------- Fetch data ---------- */
   useEffect(() => {
     if (!uid) {
@@ -168,6 +181,13 @@ function ProfileScreen() {
           <InfoCard label="Referred By" value={referredBy} />
           <InfoCard label="Your Referrals" value={`${totalReferrals}`} />
         </View>
+
+        {/* Logout */}
+<Pressable style={styles.logoutBtn} onPress={handleLogout}>
+  <Ionicons name="log-out-outline" size={20} color="#fff" />
+  <Text style={styles.logoutText}>Logout</Text>
+</Pressable>
+
       </ScrollView>
     </Animated.View>
   );
@@ -338,4 +358,24 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginTop: 4,
   },
+
+  logoutBtn: {
+  marginTop: 28,
+  marginBottom: 20,
+  backgroundColor: "#7C2D12",
+  borderRadius: 18,
+  paddingVertical: 14,
+  flexDirection: "row",
+  justifyContent: "center",
+  alignItems: "center",
+  gap: 8,
+  borderWidth: 1,
+  borderColor: "#EF444455",
+},
+logoutText: {
+  color: "#fff",
+  fontSize: 16,
+  fontWeight: "900",
+},
+
 });
