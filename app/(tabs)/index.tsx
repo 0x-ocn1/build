@@ -7,13 +7,12 @@ import {
   StyleSheet,
   Alert,
   Animated,
-  Dimensions,
   ScrollView,
   Image,
   RefreshControl,
 } from "react-native";
 import { MotiText } from "moti";
-import { MaterialIcons, Ionicons, FontAwesome5 } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -30,6 +29,7 @@ import { supabase } from "../../supabase/client";
 const DAY_SECONDS = 24 * 3600;
 const DAILY_MAX = 4.8;
 const HEADER_HEIGHT = 140;
+const BANNER_HEIGHT = 90;
 
 /* ============================================================
    ANIMATED BALANCE
@@ -71,6 +71,30 @@ const Skeleton = ({ height = 14 }: { height?: number }) => (
 );
 
 /* ============================================================
+   ICON BUTTON
+=============================================================== */
+const IconBtn = ({
+  icon,
+  label,
+  onPress,
+  disabled,
+}: {
+  icon: any;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) => (
+  <Pressable
+    onPress={onPress}
+    disabled={disabled}
+    style={[styles.iconBtn, disabled && { opacity: 0.45 }]}
+  >
+    <MaterialIcons name={icon} size={26} color="#8B5CF6" />
+    <Text style={styles.iconLabel}>{label}</Text>
+  </Pressable>
+);
+
+/* ============================================================
    MAIN PAGE
 =============================================================== */
 export default function Page() {
@@ -92,6 +116,8 @@ export default function Page() {
 
   const animatedBalance = useRef(new Animated.Value(0)).current;
   const miningDataRef = useRef(miningData);
+
+  /* spin animation (RESTORED) */
   const spinValue = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef<Animated.CompositeAnimation | null>(null);
 
@@ -131,6 +157,7 @@ export default function Page() {
     }).start();
   }, [balanceBase, getLiveBalance]);
 
+  /* session ticker (RESTORED) */
   useEffect(() => {
     const id = setInterval(() => {
       const md = miningDataRef.current;
@@ -154,6 +181,7 @@ export default function Page() {
     return () => clearInterval(id);
   }, []);
 
+  /* mining spin (RESTORED) */
   useEffect(() => {
     if (!spinAnim.current) {
       spinAnim.current = Animated.loop(
@@ -167,7 +195,7 @@ export default function Page() {
     miningActive ? spinAnim.current.start() : spinAnim.current.stop();
   }, [miningActive]);
 
-  /* ================== NEWS ================== */
+  /* ================= NEWS (RESTORED) ================= */
   useEffect(() => {
     let channel: any;
 
@@ -288,41 +316,26 @@ export default function Page() {
           <AnimatedBalance animatedValue={animatedBalance} />
         </View>
 
-        <View style={styles.buttonsRow}>
-          <Pressable
+        {/* COMPACT ACTION BAR */}
+        <View style={styles.actionRow}>
+          <IconBtn
+            icon={miningActive ? "pause-circle" : "play-circle"}
+            label="Mine"
             onPress={handleStartStop}
             disabled={isStarting}
-            style={[
-              styles.actionBtn,
-              miningActive ? styles.activeBtn : styles.startBtn,
-            ]}
-          >
-            <MaterialIcons
-              name={miningActive ? "pause-circle" : "play-circle-fill"}
-              size={30}
-              color="#fff"
-            />
-            <Text style={styles.btnText}>
-              {miningActive ? "Mining Active" : "Start Mining"}
-            </Text>
-          </Pressable>
-
-          <Pressable
+          />
+          <IconBtn
+            icon="redeem"
+            label="Claim"
             onPress={handleClaim}
             disabled={!canClaim || isClaiming}
-            style={[
-              styles.actionBtn,
-              styles.claimBtn,
-              (!canClaim || isClaiming) && { opacity: 0.45 },
-            ]}
-          >
-            <MaterialIcons name="redeem" size={26} color="#0F0A2A" />
-            <Text style={styles.claimText}>
-              {canClaim ? "Claim" : "Locked"}
-            </Text>
-          </Pressable>
+          />
+          <IconBtn icon="gift" label="Daily" onPress={() => setDailyOpen(true)} />
+          <IconBtn icon="rocket" label="Boost" onPress={() => setBoostOpen(true)} />
+          <IconBtn icon="play-circle" label="Watch" onPress={() => setWatchOpen(true)} />
         </View>
 
+        {/* SESSION */}
         <View style={styles.sessionCard}>
           <Text style={styles.sessionValue}>
             {sessionBalance.toFixed(4)} VAD
@@ -342,13 +355,18 @@ export default function Page() {
         </View>
       </View>
 
-      {/* SCROLLABLE NEWS */}
+      {/* FIXED ADBANNER */}
+      <View style={styles.bannerWrap}>
+        <AdBanner />
+      </View>
+
+      {/* SCROLLABLE NEWS ONLY */}
       <ScrollView
         style={styles.newsScroll}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
-        contentContainerStyle={{ paddingBottom: 220 }}
+        contentContainerStyle={{ paddingBottom: BANNER_HEIGHT + 20 }}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.newsCard}>
@@ -370,10 +388,6 @@ export default function Page() {
           )}
         </View>
       </ScrollView>
-
-      <View style={styles.bannerWrap}>
-        <AdBanner />
-      </View>
 
       {dailyOpen && <DailyClaim visible onClose={() => setDailyOpen(false)} />}
       {boostOpen && <Boost visible onClose={() => setBoostOpen(false)} />}
@@ -401,7 +415,11 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 24,
   },
 
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   headerTitle: { color: "#fff", fontSize: 22, fontWeight: "900" },
   headerSub: { color: "#bfc7df", marginTop: 6 },
 
@@ -420,13 +438,14 @@ const styles = StyleSheet.create({
   balance: { fontSize: 42, color: "#fff", fontWeight: "900" },
   vadText: { fontSize: 18, color: "#8B5CF6" },
 
-  buttonsRow: { flexDirection: "row", gap: 12, paddingHorizontal: 22 },
-  actionBtn: { flex: 1, borderRadius: 16, padding: 14, alignItems: "center" },
-  startBtn: { backgroundColor: "rgba(255,255,255,0.06)" },
-  activeBtn: { backgroundColor: "rgba(139,92,246,0.2)" },
-  claimBtn: { backgroundColor: "#fff" },
-  btnText: { color: "#fff", marginTop: 6, fontWeight: "800" },
-  claimText: { marginTop: 6, fontWeight: "900" },
+  actionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 22,
+    marginBottom: 10,
+  },
+  iconBtn: { alignItems: "center" },
+  iconLabel: { color: "#9FA8C7", fontSize: 11, marginTop: 4 },
 
   sessionCard: {
     margin: 22,
@@ -445,6 +464,16 @@ const styles = StyleSheet.create({
   progressFill: { height: 10, backgroundColor: "#8B5CF6" },
   progressMeta: { marginTop: 10, color: "#9FA8C7", fontSize: 12 },
 
+  bannerWrap: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: BANNER_HEIGHT,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   newsScroll: { flex: 1 },
   newsCard: {
     marginHorizontal: 22,
@@ -461,12 +490,4 @@ const styles = StyleSheet.create({
   },
   newsHeadline: { color: "#8B5CF6", fontWeight: "800" },
   newsBody: { color: "#fff", fontSize: 13 },
-
-  bannerWrap: {
-    position: "absolute",
-    bottom: 10,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
 });
