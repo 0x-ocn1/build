@@ -1,5 +1,7 @@
 // app/(tabs)/profile.tsx
 
+// app/(tabs)/profile.tsx
+
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -10,11 +12,14 @@ import {
   Easing,
   Pressable,
   Alert,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { supabase } from "../../supabase/client";
 import { getUserData } from "../../services/user";
+import { Image } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function Profile() {
   return <ProfileScreen />;
@@ -26,6 +31,7 @@ function ProfileScreen() {
   const [data, setData] = useState<any | null>(null);
 
   const fade = useRef(new Animated.Value(0)).current;
+  const insets = useSafeAreaInsets();
 
   /* ---------- Fade animation ---------- */
   useEffect(() => {
@@ -37,21 +43,15 @@ function ProfileScreen() {
     }).start();
   }, []);
 
-  /* -------------------------------------------------
-      🔥 Load Supabase Auth & Set UID
-  -------------------------------------------------- */
+  /* ---------- Auth ---------- */
   useEffect(() => {
     (async () => {
       const { data: authData } = await supabase.auth.getUser();
-      const user = authData?.user;
-      setUid(user?.id ?? null);
+      setUid(authData?.user?.id ?? null);
     })();
   }, []);
 
-  /* -------------------------------------------------
-      🔥 Fetch User Data From Supabase
-      (NO REALTIME — Supabase has no onSnapshot)
-  -------------------------------------------------- */
+  /* ---------- Fetch data ---------- */
   useEffect(() => {
     if (!uid) {
       setLoading(false);
@@ -70,24 +70,19 @@ function ProfileScreen() {
     };
 
     load();
-
     return () => {
       active = false;
     };
   }, [uid]);
 
-  /* ---------- No user ---------- */
   if (!uid) {
     return (
       <View style={styles.centered}>
-        <Text style={{ color: "#fff", fontSize: 18 }}>
-          User not logged in.
-        </Text>
+        <Text style={{ color: "#fff" }}>User not logged in.</Text>
       </View>
     );
   }
 
-  /* ---------- Loading ---------- */
   if (loading || !data) {
     return (
       <View style={styles.centered}>
@@ -96,9 +91,7 @@ function ProfileScreen() {
     );
   }
 
-  /* -------------------------------------------------
-      🔥 Safe Supabase Data Mapping
-  -------------------------------------------------- */
+  /* ---------- Safe mapping ---------- */
   const profile = data.profile ?? {};
   const mining = data.mining ?? {};
   const referrals = data.referrals ?? {};
@@ -119,61 +112,61 @@ function ProfileScreen() {
   const totalEarned =
     miningBalance + dailyTotal + boostBalance + watchEarnTotal;
 
-  /* ---------- Copy ---------- */
   const copyCode = async () => {
     if (!referralCode) return;
     await Clipboard.setStringAsync(referralCode);
-    Alert.alert("Copied!", "Referral code copied to clipboard.");
+    Alert.alert("Copied", "Referral code copied");
   };
 
   return (
     <Animated.View style={[styles.container, { opacity: fade }]}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <Text style={styles.pageTitle}>My Profile</Text>
-
-        {/* Avatar */}
-        <View style={styles.avatarBox}>
-          <Ionicons name="person" size={70} color="#8B5CF6" />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.avatarBox}>
+            {profile.avatar_url ? (
+              <Image
+                source={{ uri: profile.avatar_url }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <Ionicons name="person" size={64} color="#8B5CF6" />
+            )}
+          </View>
+          <Text style={styles.username}>{username}</Text>
         </View>
 
-        {/* Username */}
-        <Card label="Username" value={username} />
-
-        {/* Total Balance */}
-        <View style={styles.mainCard}>
-          <Text style={styles.mainLabel}>Total VAD Balance</Text>
-          <Text style={styles.mainValue}>{totalEarned.toFixed(4)} VAD</Text>
+        {/* Balance */}
+        <View style={styles.balanceCard}>
+          <Text style={styles.balanceLabel}>Total Balance</Text>
+          <Text style={styles.balanceValue}>{totalEarned.toFixed(4)} VAD</Text>
         </View>
 
         {/* Stats */}
-        <View style={styles.grid}>
+        <View style={styles.statsGrid}>
           <StatCard title="Mining" value={miningBalance} icon="hardware-chip" />
           <StatCard title="Daily" value={dailyTotal} icon="calendar" />
           <StatCard title="Boost" value={boostBalance} icon="flash" />
           <StatCard title="Watch" value={watchEarnTotal} icon="play-circle" />
         </View>
 
-        {/* Referral Code */}
+        {/* Referral */}
         <View style={styles.card}>
-          <Text style={styles.label}>Your Referral Code</Text>
+          <Text style={styles.cardLabel}>Your Referral Code</Text>
           <View style={styles.refRow}>
-            <Text style={styles.refText}>{referralCode}</Text>
+            <Text style={styles.refCode}>{referralCode}</Text>
             <Pressable onPress={copyCode} style={styles.copyBtn}>
-              <Text style={styles.copyText}>COPY</Text>
+              <Ionicons name="copy" size={16} color="#fff" />
             </Pressable>
           </View>
         </View>
 
-        {/* Referred By */}
-        <Card label="Referred By" value={referredBy} />
-
-        {/* Referral Count */}
-        <View style={styles.refCard}>
-          <Ionicons name="people" size={28} color="#34D399" />
-          <View>
-            <Text style={styles.refTitle}>Your Referrals</Text>
-            <Text style={styles.refValue}>{totalReferrals} Users</Text>
-          </View>
+        <View style={styles.dualCard}>
+          <InfoCard label="Referred By" value={referredBy} />
+          <InfoCard label="Your Referrals" value={`${totalReferrals}`} />
         </View>
       </ScrollView>
     </Animated.View>
@@ -181,15 +174,6 @@ function ProfileScreen() {
 }
 
 /* ---------- Components ---------- */
-
-function Card({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.card}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value}</Text>
-    </View>
-  );
-}
 
 function StatCard({
   title,
@@ -202,19 +186,30 @@ function StatCard({
 }) {
   return (
     <View style={styles.statCard}>
-      <Ionicons name={icon} size={26} color="#A78BFA" />
+      <Ionicons name={icon} size={22} color="#A78BFA" />
       <Text style={styles.statTitle}>{title}</Text>
-      <Text style={styles.statValue}>{value.toFixed(4)} VAD</Text>
+      <Text style={styles.statValue}>{value.toFixed(4)}</Text>
+    </View>
+  );
+}
+
+function InfoCard({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.infoCard}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
     </View>
   );
 }
 
 /* ---------- Styles ---------- */
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#050814",
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "ios" ? 50 : 30,
   },
   centered: {
     flex: 1,
@@ -222,55 +217,61 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#050814",
   },
-  pageTitle: {
-    color: "#fff",
-    fontSize: 24,
-    fontWeight: "900",
-    textAlign: "center",
-    marginBottom: 14,
+  header: {
+    alignItems: "center",
+    marginBottom: 20,
   },
   avatarBox: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    alignSelf: "center",
+    width: 110,
+    height: 110,
+    borderRadius: 55,
     backgroundColor: "rgba(139,92,246,0.15)",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#8B5CF6",
-    marginBottom: 20,
+    marginBottom: 10,
+    overflow: "hidden",
   },
-  mainCard: {
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+  },
+  username: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  balanceCard: {
     backgroundColor: "#0B1020",
-    padding: 26,
-    borderRadius: 26,
+    borderRadius: 24,
+    padding: 24,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#22C55E66",
-    marginBottom: 16,
+    borderColor: "#22C55E55",
+    marginBottom: 18,
   },
-  mainLabel: {
+  balanceLabel: {
     color: "#9FA8C7",
     fontSize: 13,
   },
-  mainValue: {
+  balanceValue: {
     color: "#22C55E",
     fontSize: 32,
     fontWeight: "900",
-    marginTop: 8,
+    marginTop: 6,
   },
-  grid: {
+  statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
     justifyContent: "space-between",
+    gap: 12,
   },
   statCard: {
     width: "48%",
     backgroundColor: "#0B1020",
-    borderRadius: 22,
-    padding: 18,
+    borderRadius: 20,
+    padding: 16,
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#1E293B",
@@ -287,63 +288,54 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   card: {
+    marginTop: 18,
     backgroundColor: "#0B1020",
     borderRadius: 18,
     padding: 16,
-    marginTop: 16,
     borderWidth: 1,
     borderColor: "#1E293B",
   },
-  label: {
+  cardLabel: {
     color: "#9FA8C7",
     fontSize: 12,
   },
-  value: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-    marginTop: 4,
-  },
   refRow: {
+    marginTop: 8,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 6,
   },
-  refText: {
+  refCode: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "900",
   },
   copyBtn: {
     backgroundColor: "#8B5CF6",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    padding: 8,
     borderRadius: 10,
   },
-  copyText: {
-    color: "#fff",
-    fontWeight: "900",
-    fontSize: 12,
-  },
-  refCard: {
-    marginTop: 20,
-    backgroundColor: "rgba(52,211,153,0.12)",
-    padding: 18,
-    borderRadius: 20,
+  dualCard: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    borderWidth: 1,
-    borderColor: "#22C55E55",
+    gap: 12,
+    marginTop: 16,
   },
-  refTitle: {
+  infoCard: {
+    flex: 1,
+    backgroundColor: "#0B1020",
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#1E293B",
+  },
+  infoLabel: {
     color: "#9FA8C7",
     fontSize: 12,
   },
-  refValue: {
-    color: "#22C55E",
-    fontSize: 20,
-    fontWeight: "900",
+  infoValue: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "800",
+    marginTop: 4,
   },
 });
