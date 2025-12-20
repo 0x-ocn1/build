@@ -12,36 +12,8 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { claimDailyReward } from "../services/user";
 import { useMining } from "../hooks/useMining";
 import { supabase } from "../supabase/client";
+import { showInterstitial } from "./InterstitialAd";
 
-/* -------------------------------------------------
-   SAFE ADS SETUP
--------------------------------------------------- */
-const IS_NATIVE =
-  Platform.OS === "android" || Platform.OS === "ios";
-
-let Ads: any = null;
-if (IS_NATIVE) {
-  try {
-    Ads = require("react-native-google-mobile-ads");
-  } catch {
-    Ads = null;
-  }
-}
-
-function useSafeInterstitialAd(adUnitId: string) {
-  if (!IS_NATIVE || !Ads?.useInterstitialAd) {
-    return {
-      isLoaded: false,
-      isClosed: false,
-      load: () => {},
-      show: () => {},
-    };
-  }
-
-  return Ads.useInterstitialAd(adUnitId, {
-    requestNonPersonalizedAdsOnly: true,
-  });
-}
 
 /* -------------------------------------------------
    TYPES
@@ -95,7 +67,6 @@ export default function DailyClaim({
      SAFETY REFS (MATCH BOOST)
   -------------------------------------------------- */
   const mountedRef = useRef(true);
-  const rewardPendingRef = useRef(false);
   const loadingRef = useRef(false);
 
   useEffect(() => {
@@ -110,21 +81,6 @@ export default function DailyClaim({
      AUTO CLOSE IF LOGGED OUT
   -------------------------------------------------- */
 
-
-  /* -------------------------------------------------
-     INTERSTITIAL AD
-  -------------------------------------------------- */
-  const adUnitId =
-    __DEV__ && Ads?.TestIds
-      ? Ads.TestIds.INTERSTITIAL
-      : "ca-app-pub-4533962949749202/2761859275";
-
-  const { isLoaded, isClosed, load, show } =
-    useSafeInterstitialAd(adUnitId);
-
-  useEffect(() => {
-    if (visible) load();
-  }, [visible, load]);
 
   /* -------------------------------------------------
      COOLDOWN TIMER
@@ -151,79 +107,50 @@ export default function DailyClaim({
     return () => clearInterval(iv);
   }, [dailyClaim?.last_claim]);
 
-  /* -------------------------------------------------
-     AD CLOSED → GIVE REWARD
-  -------------------------------------------------- */
-  useEffect(() => {
-    if (!isClosed || !rewardPendingRef.current) return;
-
-    rewardPendingRef.current = false;
-
-    (async () => {
-      try {
-        if (!uid || !mountedRef.current) return;
-
-        const res = await claimDailyReward(uid);
-        if (!mountedRef.current) return;
-
-        const reward =
-          typeof res === "object"
-            ? res?.reward ?? 0
-            : Number(res || 0);
-
-        setMessage(
-          reward === 0
-            ? "Already claimed for today."
-            : `+${reward.toFixed(1)} VAD added to your balance!`
-        );
-      } catch {
-        if (mountedRef.current)
-          setMessage("Claim failed. Try again.");
-      } finally {
-        if (mountedRef.current) {
-          setLoading(false);
-          loadingRef.current = false;
-        }
-      }
-    })();
-  }, [isClosed, uid]);
-
+  
   /* -------------------------------------------------
      CLAIM HANDLER
   -------------------------------------------------- */
   const handleClaim = async () => {
-    if (loadingRef.current || cooldownMs > 0) return;
+  if (loadingRef.current || cooldownMs > 0) return;
 
-    setMessage("");
-    setLoading(true);
-    loadingRef.current = true;
-    rewardPendingRef.current = true;
+  setMessage("");
+  setLoading(true);
+  loadingRef.current = true;
 
-    if (!uid) {
-      setMessage("Please log in to claim.");
-      setLoading(false);
-      loadingRef.current = false;
-      rewardPendingRef.current = false;
-      return;
-    }
+  if (!uid) {
+    setMessage("Please log in to claim.");
+    setLoading(false);
+    loadingRef.current = false;
+    return;
+  }
 
-    if (!isLoaded) {
-      load();
-      setLoading(false);
-      loadingRef.current = false;
-      rewardPendingRef.current = false;
-      return;
-    }
+  try {
+    // 🔥 SHOW AD FIRST (await)
+    await showInterstitial();
 
-    try {
-      show();
-    } catch {
-      rewardPendingRef.current = false;
-      setMessage("Failed to show ad.");
-      setLoading(false);
-      loadingRef.current = false;
-    }
-  };
+    // ✅ THEN reward
+    const res = await claimDailyReward(uid);
+
+    const reward =
+      typeof res === "object"
+        ? res?.reward ?? 0
+        : Number(res || 0);
+
+    setMessage(
+      reward === 0
+        ? "Already claimed for today."
+        : `+${reward.toFixed(1)} VAD added to your balance!`
+    );
+  } catch (err) {
+    console.log("Ad or claim failed:", err);
+    setMessage("Ad not available. Try again later.");
+  } finally {
+    setLoading(false);
+    loadingRef.current = false;
+  }
+};
+
 
   const streak = dailyClaim?.streak ?? 0;
 
