@@ -1,3 +1,4 @@
+//components/WatchEarn.tsx
 import React, {
   useEffect,
   useState,
@@ -15,26 +16,8 @@ import {
 } from "react-native";
 
 import { supabase } from "../supabase/client";
+import { showRewardedAd } from "./RewardedAd";
 
-/* -------------------------------------------------
-   SAFE REWARDED AD LOADER
--------------------------------------------------- */
-const IS_NATIVE =
-  Platform.OS === "android" || Platform.OS === "ios";
-
-async function safeShowRewardedAd(): Promise<boolean> {
-  if (!IS_NATIVE) return false;
-
-  try {
-    const mod = await import("./RewardedAd");
-    if (!mod?.showRewardedAd) return false;
-
-    await mod.showRewardedAd();
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /* -------------------------------------------------
    SUPABASE CLAIM
@@ -153,42 +136,37 @@ export default function WatchEarn({
      WATCH HANDLER
   -------------------------------------------------- */
   const handleWatch = useCallback(async () => {
-    if (!uid || loadingRef.current) return;
+  if (!uid || loadingRef.current) return;
 
-    setLoading(true);
-    loadingRef.current = true;
-    setCompleted(false);
-    setMessage("");
+  setLoading(true);
+  loadingRef.current = true;
+  setCompleted(false);
+  setMessage("");
 
-    const completedAd = await safeShowRewardedAd();
+  try {
+    // 🔥 SHOW REWARDED AD (must be fully watched)
+    await showRewardedAd();
 
-    if (!completedAd) {
-      setMessage("Ad not completed.");
+    // ✅ THEN reward user
+    const reward = await claimWatchRewardSupabase(uid);
+    if (!mountedRef.current) return;
+
+    setCompleted(true);
+    setMessage(
+      `+${Number(reward || 0).toFixed(2)} VAD credited!`
+    );
+  } catch (err) {
+    console.log("Rewarded ad not completed:", err);
+    if (mountedRef.current)
+      setMessage("You must finish the ad to earn rewards.");
+  } finally {
+    if (mountedRef.current) {
       setLoading(false);
       loadingRef.current = false;
-      return;
     }
+  }
+}, [uid]);
 
-    try {
-      const reward = await claimWatchRewardSupabase(uid);
-      if (!mountedRef.current) return;
-
-      setCompleted(true);
-      setMessage(
-        `+${Number(reward || 0).toFixed(2)} VAD credited!`
-      );
-    } catch {
-      if (mountedRef.current)
-        setMessage("Reward failed.");
-    } finally {
-      if (mountedRef.current) {
-        setLoading(false);
-        loadingRef.current = false;
-      }
-    }
-  }, [uid]);
-
-  if (!visible) return null;
 
   const { totalWatched, totalEarned } = stats;
 
