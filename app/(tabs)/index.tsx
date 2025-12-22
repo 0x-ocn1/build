@@ -393,10 +393,13 @@ const handleRefresh = async () => {
 </View>
 
       
-
+<View style={styles.container}>
+  ...
   <AdBanner />
-
-
+</View>
+  onAdLoaded={() => console.log("Banner loaded")}
+  onAdFailedToLoad={(e) => console.log("Ad failed", e)}
+/>
 
       {/* SCROLLABLE NEWS ONLY */}
       <ScrollView
