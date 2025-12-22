@@ -137,11 +137,12 @@ export default function DailyClaim({
         ? res?.reward ?? 0
         : Number(res || 0);
 
-    setMessage(
-      reward === 0
-        ? "Already claimed for today."
-        : `+${reward.toFixed(1)} VAD added to your balance!`
-    );
+   if (reward > 0) {
+  setMessage(`+${reward.toFixed(1)} VAD added to your balance!`);
+} else {
+  setMessage("Claim failed. Please try again later.");
+}
+
   } catch (err) {
     console.log("Ad or claim failed:", err);
     setMessage("Ad not available. Try again later.");

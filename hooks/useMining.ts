@@ -154,83 +154,96 @@ export function useMining() {
      INITIAL LOAD + REALTIME
   ------------------------------------------------------------ */
 
-  useEffect(() => {
-    let mounted = true;
+useEffect(() => {
+  let mounted = true;
 
-    (async () => {
-      setIsLoading(true);
+  (async () => {
+    setIsLoading(true);
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-      if (!user) {
-        setIsLoading(false);
-        return;
-      }
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
 
-      const uid = user.id;
+    const uid = user.id;
 
-      
+    try {
+      const combined = await getUserData(uid);
+      if (!mounted) return;
 
+      setUserProfile(normalizeProfile(combined?.profile ?? null));
+      setMiningData(normalizeMining(combined?.mining ?? null));
+      setDailyClaim(combined?.dailyClaim ?? null);
+      setBoost(normalizeBoost(combined?.boost ?? null));
+      setWatchEarn(combined?.watchEarn ?? null);
+    } finally {
+      if (mounted) setIsLoading(false);
+    }
+
+    /* ------------------ REALTIME (SAFE MERGE) ------------------ */
+
+    const miningChannel = supabase
+      .channel(`mining:uid:${uid}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "mining_data",
+          filter: `user_id=eq.${uid}`,
+        },
+        (payload) => {
+          const incoming = normalizeMining(payload.new as RawMiningRow);
+          if (!incoming) return;
+
+          setMiningData((prev) => {
+            if (!prev) return incoming;
+            return {
+              miningActive: incoming.miningActive,
+              lastStart: incoming.lastStart ?? prev.lastStart,
+              lastClaim: incoming.lastClaim ?? prev.lastClaim,
+              balance: Math.max(prev.balance, incoming.balance),
+            };
+          });
+        }
+      )
+      .subscribe();
+
+    const dailyChannel = supabase
+      .channel(`daily:uid:${uid}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "daily_claim",
+          filter: `user_id=eq.${uid}`,
+        },
+        (payload) => {
+          setDailyClaim(payload.new as RawDailyRow);
+        }
+      )
+      .subscribe();
+
+    channelsRef.current = [miningChannel, dailyChannel];
+  })();
+
+  return () => {
+    mounted = false;
+    channelsRef.current.forEach((ch) => {
       try {
-        const combined = await getUserData(uid);
-        if (!mounted) return;
+        supabase.removeChannel(ch);
+      } catch {}
+    });
+    channelsRef.current = [];
+  };
+}, []);
 
-        setUserProfile(normalizeProfile(combined?.profile ?? null));
-        setMiningData(normalizeMining(combined?.mining ?? null));
-        setDailyClaim(combined?.dailyClaim ?? null);
-        setBoost(normalizeBoost(combined?.boost ?? null));
-        setWatchEarn(combined?.watchEarn ?? null);
-      } finally {
-        if (mounted) setIsLoading(false);
-      }
-
-      /* ------------------ REALTIME (SAFE MERGE) ------------------ */
-
-      const channel = supabase
-        .channel(`mining:uid:${uid}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "mining_data",
-            filter: `user_id=eq.${uid}`,
-          },
-          (payload) => {
-            const incoming = normalizeMining(payload.new as RawMiningRow);
-
-            if (!incoming) return;
-
-            setMiningData((prev) => {
-              if (!prev) return incoming;
-
-              return {
-                miningActive: incoming.miningActive,
-                lastStart: incoming.lastStart ?? prev.lastStart,
-                lastClaim: incoming.lastClaim ?? prev.lastClaim,
-                balance: Math.max(prev.balance, incoming.balance), // 🔒 never rewind
-              };
-            });
-          }
-        )
-        .subscribe();
-
-      channelsRef.current = [channel];
-    })();
-
-    return () => {
-      mounted = false;
-      channelsRef.current.forEach((ch) => {
-        try {
-          supabase.removeChannel(ch);
-        } catch {}
-      });
-      channelsRef.current = [];
-    };
-  }, []);
-
+  
   /* ------------------------------------------------------------
      ACTIONS
   ------------------------------------------------------------ */
