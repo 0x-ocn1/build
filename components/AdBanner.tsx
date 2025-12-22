@@ -7,9 +7,8 @@ import {
   TestIds,
 } from "react-native-google-mobile-ads";
 
-const unitId = __DEV__
-  ? TestIds.BANNER
-  : "ca-app-pub-4533962949749202/7206578732";
+const unitId = TestIds.BANNER;
+
 
 export default function AdBanner() {
   if (Platform.OS === "web") return null;
