@@ -1,5 +1,4 @@
 // app/(tabs)/index.tsx
-
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import {
   View,
@@ -9,9 +8,7 @@ import {
   StyleSheet,
   Alert,
   Animated,
-  ScrollView,
   Image,
-  RefreshControl,
 } from "react-native";
 
 import { MotiText } from "moti";
@@ -24,27 +21,25 @@ import { useMining } from "../../hooks/useMining";
 import DailyClaim from "../../components/DailyClaim";
 import Boost from "../../components/Boost";
 import WatchEarn from "../../components/WatchEarn";
+import News from "../../components/News";
 import AdBanner from "../../components/AdBanner";
-import { supabase } from "../../supabase/client";
 
 /* ============================================================
-   CONSTANTS (UNCHANGED)
+   CONSTANTS
 =============================================================== */
 const DAY_SECONDS = 24 * 3600;
 const DAILY_MAX = 4.8;
-const HEADER_HEIGHT = 130;
-const BANNER_HEIGHT = 90;
+const HEADER_HEIGHT = 150;
+const BANNER_HEIGHT = 60;
 
 /* ============================================================
-   ANIMATED BALANCE (UNCHANGED)
+   ANIMATED BALANCE
 =============================================================== */
 function AnimatedBalance({ animatedValue }: { animatedValue: Animated.Value }) {
   const [val, setVal] = useState(0);
 
   useEffect(() => {
-    const id = animatedValue.addListener(({ value }) =>
-      setVal(Number(value))
-    );
+    const id = animatedValue.addListener(({ value }) => setVal(Number(value)));
     return () => animatedValue.removeListener(id);
   }, [animatedValue]);
 
@@ -74,7 +69,6 @@ export default function Page() {
     start,
     stop,
     claim,
-    getLiveBalance,
   } = useMining();
 
   const miningActive = miningData?.miningActive ?? false;
@@ -83,7 +77,6 @@ export default function Page() {
   const animatedBalance = useRef(new Animated.Value(0)).current;
   const miningDataRef = useRef(miningData);
 
-  /* spin animation (RESTORED & SAFE) */
   const spinValue = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef<Animated.CompositeAnimation | null>(null);
 
@@ -91,7 +84,6 @@ export default function Page() {
 
   const [isStarting, setIsStarting] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
 
   const [sessionElapsed, setSessionElapsed] = useState(0);
   const [sessionBalance, setSessionBalance] = useState(0);
@@ -100,8 +92,7 @@ export default function Page() {
   const [dailyOpen, setDailyOpen] = useState(false);
   const [boostOpen, setBoostOpen] = useState(false);
   const [watchOpen, setWatchOpen] = useState(false);
-
-  const [news, setNews] = useState<any[]>([]);
+  const [newsOpen, setNewsOpen] = useState(false);
 
   const progress = useMemo(
     () => (miningActive ? Math.min(1, sessionElapsed / DAY_SECONDS) : 0),
@@ -111,41 +102,19 @@ export default function Page() {
   const canClaim = miningActive && sessionElapsed >= DAY_SECONDS;
 
   /* ============================================================
-     EFFECTS (ALL LOGIC RESTORED)
+     EFFECTS
 =============================================================== */
 
   useEffect(() => {
     miningDataRef.current = miningData;
   }, [miningData]);
 
-  /* balance sync from mining data */
   useEffect(() => {
     if (typeof miningData?.balance === "number") {
       setClaimedBalance(miningData.balance);
     }
   }, [miningData?.balance]);
 
-  /* realtime balance sync (RESTORED) */
-  useEffect(() => {
-    let active = true;
-
-    const sync = async () => {
-      try {
-        const live = await getLiveBalance();
-        if (active && typeof live === "number") {
-          setClaimedBalance(live);
-        }
-      } catch {}
-    };
-
-    sync();
-
-    return () => {
-      active = false;
-    };
-  }, [getLiveBalance]);
-
-  /* animate balance */
   useEffect(() => {
     if (claimedBalance === null) return;
     Animated.timing(animatedBalance, {
@@ -155,11 +124,9 @@ export default function Page() {
     }).start();
   }, [claimedBalance]);
 
-  /* session ticker (RESTORED) */
   useEffect(() => {
     const id = setInterval(() => {
       const md = miningDataRef.current;
-
       if (!md?.miningActive || !md?.lastStart) {
         setSessionElapsed(0);
         setSessionBalance(0);
@@ -174,13 +141,12 @@ export default function Page() {
 
       setSessionElapsed(elapsed);
       setSessionBalance(elapsed * PER_SECOND);
-      setTimeLeft(Math.max(0, DAY_SECONDS - elapsed));
+      setTimeLeft(DAY_SECONDS - elapsed);
     }, 1000);
 
     return () => clearInterval(id);
   }, []);
 
-  /* mining spin (ALWAYS MOUNTED) */
   useEffect(() => {
     if (!spinAnim.current) {
       spinAnim.current = Animated.loop(
@@ -191,42 +157,11 @@ export default function Page() {
         })
       );
     }
-
     miningActive ? spinAnim.current.start() : spinAnim.current.stop();
   }, [miningActive]);
 
-  /* ================= NEWS (REALTIME, RESTORED) ================= */
-  useEffect(() => {
-    let channel: any;
-
-    const fetchNews = async () => {
-      const { data } = await supabase
-        .from("vad_news")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      if (data) setNews(data);
-    };
-
-    fetchNews();
-
-    channel = supabase
-      .channel("vad-news")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "vad_news" },
-        fetchNews
-      )
-      .subscribe();
-
-    return () => {
-      if (channel) supabase.removeChannel(channel);
-    };
-  }, []);
-
   /* ============================================================
-     ACTIONS (UNCHANGED)
+     ACTIONS
 =============================================================== */
   const handleStartStop = async () => {
     try {
@@ -252,27 +187,6 @@ export default function Page() {
     }
   };
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-
-    try {
-      const live = await getLiveBalance();
-      if (typeof live === "number") {
-        setClaimedBalance(live);
-      }
-
-      const { data } = await supabase
-        .from("vad_news")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      if (data) setNews(data);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
   if (isLoading) {
     return (
       <View style={styles.loading}>
@@ -291,7 +205,7 @@ export default function Page() {
 =============================================================== */
   return (
     <View style={styles.container}>
-      {/* ================= FIXED HEADER ================= */}
+      {/* HEADER */}
       <LinearGradient
         colors={["#24164a", "#0b0614"]}
         style={[styles.fixedHeader, { paddingTop: insets.top + 14 }]}
@@ -308,47 +222,27 @@ export default function Page() {
           </Pressable>
 
           <Text style={styles.headerTitle}>VAD Mining</Text>
-
-          <Pressable onPress={handleRefresh}>
-            <Ionicons name="refresh" size={22} color="#8B5CF6" />
-          </Pressable>
+          <View style={{ width: 22 }} />
         </View>
 
-        <Text style={styles.headerSub}>
-          Max {DAILY_MAX} VAD per 24 hours
-        </Text>
+        <Text style={styles.headerSub}>Max {DAILY_MAX} VAD per 24 hours</Text>
       </LinearGradient>
 
-      {/* ================= STATIC CONTENT ================= */}
+      {/* CONTENT */}
       <View style={{ marginTop: HEADER_HEIGHT }}>
-        {/* BALANCE */}
         <View style={styles.balanceWrap}>
           <Text style={styles.label}>Total Balance</Text>
           <AnimatedBalance animatedValue={animatedBalance} />
         </View>
 
-        {/* PRIMARY ACTIONS */}
         <View style={styles.primaryActions}>
-          <Pressable
-            style={styles.primaryBtn}
-            onPress={handleStartStop}
-            disabled={isStarting}
-          >
-            <Ionicons
-              name={miningActive ? "pause" : "play"}
-              size={40}
-              color="#fff"
-            />
-            <Text style={styles.primaryText}>
-              {miningActive ? "Stop" : "Mine"}
-            </Text>
+          <Pressable style={styles.primaryBtn} onPress={handleStartStop} disabled={isStarting}>
+            <Ionicons name={miningActive ? "pause" : "play"} size={40} color="#fff" />
+            <Text style={styles.primaryText}>{miningActive ? "Stop" : "Mine"}</Text>
           </Pressable>
 
           <Pressable
-            style={[
-              styles.primaryBtn,
-              !canClaim && { opacity: 0.45 },
-            ]}
+            style={[styles.primaryBtn, !canClaim && { opacity: 0.45 }]}
             onPress={handleClaim}
             disabled={!canClaim || isClaiming}
           >
@@ -357,84 +251,55 @@ export default function Page() {
           </Pressable>
         </View>
 
-        {/* MINING SESSION */}
         <View style={styles.sessionCard}>
-          <Animated.View
-            style={{
-              transform: [{ rotate: spin }],
-              opacity: miningActive ? 1 : 0.35,
-            }}
-          >
+          <Animated.View style={{ transform: [{ rotate: spin }], opacity: miningActive ? 1 : 0.35 }}>
             <Ionicons name="hardware-chip" size={36} color="#8B5CF6" />
           </Animated.View>
 
           <Text style={styles.sessionValue}>
-            {miningActive
-              ? `${sessionBalance.toFixed(4)} VAD`
-              : "Start mining to begin"}
+            {miningActive ? `${sessionBalance.toFixed(4)} VAD` : "Start mining to begin"}
           </Text>
 
           <View style={styles.progressBg}>
-            <View
-              style={[
-                styles.progressFill,
-                { width: `${progress * 100}%` },
-              ]}
-            />
+            <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
           </View>
 
           <Text style={styles.progressMeta}>
             {canClaim
               ? "✅ Claim available"
-              : `⏳ ${Math.floor(timeLeft / 3600)}h ${Math.floor(
-                  (timeLeft % 3600) / 60
-                )}m remaining`}
+              : `⏳ ${Math.floor(timeLeft / 3600)}h ${Math.floor((timeLeft % 3600) / 60)}m remaining`}
           </Text>
         </View>
 
-        {/* FLOATING ACTIONS */}
         <View style={styles.floatingRow}>
           <MiniAction icon="rocket" label="Boost" onPress={() => setBoostOpen(true)} />
           <MiniAction icon="play-circle" label="Watch" onPress={() => setWatchOpen(true)} />
           <MiniAction icon="calendar" label="Daily" onPress={() => setDailyOpen(true)} />
         </View>
 
-        {/* AD BANNER (TIGHT) */}
-        <View style={styles.inlineAdWrap}>
-          <AdBanner />
-        </View>
+        {/* NEWS PREVIEW */}
+        <Pressable style={styles.newsPreview} onPress={() => setNewsOpen(true)}>
+          <View style={styles.newsRow}>
+            <Ionicons name="newspaper" size={22} color="#8B5CF6" />
+            <Text style={styles.newsPreviewTitle}>VAD Updates</Text>
+          </View>
+          <Text style={styles.newsPreviewText}>
+            Latest announcements, mining updates, rewards & ecosystem news.
+          </Text>
+        </Pressable>
       </View>
 
-      {/* ================= SCROLLABLE NEWS ONLY ================= */}
-      <ScrollView
-        style={styles.newsScroll}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-          />
-        }
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 24 }}
-      >
-        <View style={styles.newsCard}>
-          <Text style={styles.newsTitle}>Latest News</Text>
+      {/* AD BANNER */}
+<View style={styles.newsAdWrap}>
+  <AdBanner />
+</View>
 
-          {news.map((n) => (
-            <View key={n.id} style={styles.newsBlock}>
-              {n.image_url && (
-                <Image source={{ uri: n.image_url }} style={styles.newsImage} />
-              )}
-              <Text style={styles.newsHeadline}>{n.title}</Text>
-              <Text style={styles.newsBody}>{n.body}</Text>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
 
+      {/* MODALS */}
       {dailyOpen && <DailyClaim visible onClose={() => setDailyOpen(false)} />}
       {boostOpen && <Boost visible onClose={() => setBoostOpen(false)} />}
       {watchOpen && <WatchEarn visible onClose={() => setWatchOpen(false)} />}
+      {newsOpen && <News visible onClose={() => setNewsOpen(false)} />}
     </View>
   );
 }
@@ -468,11 +333,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
 
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   headerTitle: { color: "#fff", fontSize: 22, fontWeight: "900" },
   headerSub: { color: "#bfc7df", marginTop: 6 },
 
@@ -485,6 +346,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatar: { width: 44, height: 44, borderRadius: 22 },
+
+  
 
   balanceWrap: { paddingHorizontal: 22, paddingTop: 20 },
   label: { color: "#9FA8C7", marginBottom: 6 },
@@ -514,12 +377,9 @@ const styles = StyleSheet.create({
     padding: 18,
     alignItems: "center",
   },
-  sessionValue: {
-    fontSize: 28,
-    color: "#fff",
-    fontWeight: "900",
-    marginVertical: 10,
-  },
+
+  sessionValue: { fontSize: 28, color: "#fff", fontWeight: "900", marginVertical: 10 },
+
   progressBg: {
     height: 10,
     width: "100%",
@@ -534,8 +394,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-around",
     marginHorizontal: 22,
-    marginBottom: 10,
+    marginBottom: 6,
   },
+
   miniBtn: {
     alignItems: "center",
     padding: 10,
@@ -544,33 +405,27 @@ const styles = StyleSheet.create({
   },
   miniLabel: { color: "#9FA8C7", fontSize: 11, marginTop: 4 },
 
-  inlineAdWrap: {
-    marginHorizontal: 22,
-    height: BANNER_HEIGHT,
-    borderRadius: 18,
-    overflow: "hidden",
-  },
+ newsPreview: {
+  marginHorizontal: 22,
+  marginTop: 4,        // 👈 pull it upward
+  paddingVertical: 10, // 👈 tighter height
+  paddingHorizontal: 14,
+  borderRadius: 16,    // slightly tighter look
+  backgroundColor: "rgba(255,255,255,0.04)",
+},
 
-  newsScroll: { flex: 1 },
-  newsCard: {
-    marginHorizontal: 22,
-    marginTop: 8,
-    backgroundColor: "rgba(255,255,255,0.03)",
-    borderRadius: 18,
-    padding: 18,
-  },
-  newsTitle: { color: "#fff", fontWeight: "900", marginBottom: 12 },
-  newsBlock: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-  },
-  newsImage: {
-    height: 140,
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-  newsHeadline: { color: "#8B5CF6", fontWeight: "800" },
-  newsBody: { color: "#fff", fontSize: 13 },
+  newsRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  newsPreviewTitle: { color: "#fff", fontWeight: "900", marginLeft: 8 },
+  newsPreviewText: { color: "#9FA8C7", fontSize: 12, lineHeight: 16 },
+
+ newsAdWrap: {
+  marginHorizontal: 22,
+  marginTop: 12,
+  height: 60,              // 👈 REQUIRED
+  borderRadius: 18,
+  overflow: "hidden",
+  backgroundColor: "rgba(255,255,255,0.05)", // optional (debug/UX)
+},
+
+
 });
