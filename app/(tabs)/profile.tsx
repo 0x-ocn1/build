@@ -1,5 +1,3 @@
-// app/(tabs)/profile.tsx
-
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   View,
@@ -34,7 +32,7 @@ function ProfileScreen() {
   useEffect(() => {
     Animated.timing(fade, {
       toValue: 1,
-      duration: 350,
+      duration: 300,
       easing: Easing.out(Easing.ease),
       useNativeDriver: true,
     }).start();
@@ -84,21 +82,17 @@ function ProfileScreen() {
 
   /* ---------- Logout ---------- */
   const handleLogout = useCallback(() => {
-    Alert.alert(
-      "Log out",
-      "Are you sure you want to log out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Logout",
-          style: "destructive",
-          onPress: async () => {
-            await supabase.auth.signOut();
-            router.replace("/(auth)/login");
-          },
+    Alert.alert("Log out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Logout",
+        style: "destructive",
+        onPress: async () => {
+          await supabase.auth.signOut();
+          router.replace("/(auth)/login");
         },
-      ]
-    );
+      },
+    ]);
   }, []);
 
   /* ---------- Guards ---------- */
@@ -148,11 +142,14 @@ function ProfileScreen() {
 
   return (
     <Animated.View style={[styles.container, { opacity: fade }]}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.avatar}>
-            <Ionicons name="person" size={64} color="#A78BFA" />
+            <Ionicons name="person" size={44} color="#A78BFA" />
           </View>
           <Text style={styles.username}>{username}</Text>
         </View>
@@ -197,8 +194,6 @@ function ProfileScreen() {
           <Ionicons name="log-out-outline" size={18} color="#fff" />
           <Text style={styles.logoutText}>Log out</Text>
         </Pressable>
-
-        <View style={{ height: 30 }} />
       </ScrollView>
     </Animated.View>
   );
@@ -217,7 +212,7 @@ function Stat({
 }) {
   return (
     <View style={styles.statCard}>
-      <Ionicons name={icon} size={24} color="#A78BFA" />
+      <Ionicons name={icon} size={22} color="#A78BFA" />
       <Text style={styles.statLabel}>{label}</Text>
       <Text style={styles.statValue}>{value.toFixed(4)}</Text>
     </View>
@@ -236,7 +231,7 @@ function Section({
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Ionicons name={icon} size={18} color="#9FA8C7" />
+        <Ionicons name={icon} size={16} color="#9FA8C7" />
         <Text style={styles.sectionTitle}>{title}</Text>
       </View>
       {children}
@@ -258,7 +253,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#050814",
+  },
+  scrollContent: {
     paddingHorizontal: 20,
+    paddingBottom: 120, // ✅ prevents bottom tab overlap
   },
   centered: {
     flex: 1,
@@ -272,13 +270,13 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: "center",
-    marginTop: 10,
-    marginBottom: 20,
+    marginTop: 8,
+    marginBottom: 18,
   },
   avatar: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
     backgroundColor: "rgba(167,139,250,0.15)",
     justifyContent: "center",
     alignItems: "center",
@@ -287,14 +285,14 @@ const styles = StyleSheet.create({
   },
   username: {
     color: "#fff",
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "900",
-    marginTop: 12,
+    marginTop: 10,
   },
   balanceCard: {
     backgroundColor: "#0B1020",
-    borderRadius: 24,
-    padding: 24,
+    borderRadius: 22,
+    padding: 22,
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#22C55E55",
@@ -302,11 +300,11 @@ const styles = StyleSheet.create({
   },
   balanceLabel: {
     color: "#9FA8C7",
-    fontSize: 13,
+    fontSize: 12,
   },
   balanceValue: {
     color: "#22C55E",
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: "900",
     marginTop: 6,
   },
@@ -319,8 +317,8 @@ const styles = StyleSheet.create({
   statCard: {
     width: "48%",
     backgroundColor: "#0B1020",
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#1E293B",
@@ -334,7 +332,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "800",
-    marginTop: 2,
   },
   section: {
     backgroundColor: "#0B1020",
@@ -362,7 +359,7 @@ const styles = StyleSheet.create({
   },
   refCode: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900",
   },
   copyBtn: {
